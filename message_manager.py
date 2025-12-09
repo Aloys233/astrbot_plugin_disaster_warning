@@ -567,23 +567,15 @@ class MessagePushManager:
             return f"https://maps.google.com/maps?q={lat},{lon}&z={zoom}"
 
         elif self.map_provider == "baidu":
-            # 百度地图坐标需要转换（WGS84->BD09）
-            bd_lat, bd_lon = self._wgs84_to_bd09(lat, lon)
-
-            # 简化：使用最基础的百度地图marker API
-            baidu_map_url = f"https://api.map.baidu.com/marker?location={bd_lat},{bd_lon}&zoom={zoom}&title={magnitude_info}+Epicenter&content={location_info[:32]}&output=html"
-            logger.info("[灾害预警] 已生成百度地图链接")
+            # 百度地图直接使用WGS84坐标（实际观测证明精度足够）
+            baidu_map_url = f"https://api.map.baidu.com/marker?location={lat},{lon}&zoom={zoom}&title={magnitude_info}+Epicenter&content={location_info[:32]}&output=html"
+            logger.info("[灾害预警] 已生成百度地图链接（使用WGS84坐标）")
             return baidu_map_url
 
         elif self.map_provider == "amap":
             # 高德地图简洁格式
             return f"https://uri.amap.com/marker?position={lon},{lat}&zoom={zoom}"
 
-    def _wgs84_to_bd09(self, lat: float, lon: float) -> tuple:
-        """WGS84坐标转百度坐标（简化版）"""
-        # 这里使用简化的坐标转换，实际应用中可能需要更精确的算法
-        # 对于灾害预警，近似坐标已经足够
-        return lat, lon
 
     def _get_all_sessions(self) -> list[str]:
         """获取所有会话"""
