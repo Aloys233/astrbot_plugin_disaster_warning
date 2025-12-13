@@ -1,8 +1,10 @@
 """
 WebSocket连接管理器
+适配数据处理器架构，提供更好的错误处理和重连机制
 """
 
 import asyncio
+import traceback
 from collections.abc import Callable
 from typing import Any
 
@@ -21,12 +23,14 @@ class WebSocketManager:
         self.connections: dict[str, websockets.WebSocketServerProtocol] = {}
         self.message_handlers: dict[str, Callable] = {}
         self.reconnect_tasks: dict[str, asyncio.Task] = {}
-        self.connection_retry_counts: dict[str, int] = {}  # 记录每个连接的重试次数
+        self.connection_retry_counts: dict[str, int] = {}
+        self.connection_info: dict[str, dict] = {}  # 新增：存储连接信息
         self.running = False
 
     def register_handler(self, connection_name: str, handler: Callable):
         """注册消息处理器"""
         self.message_handlers[connection_name] = handler
+        logger.info(f"[灾害预警] 注册处理器: {connection_name}")
 
     async def connect(
         self,
@@ -34,9 +38,20 @@ class WebSocketManager:
         uri: str,
         headers: dict | None = None,
         is_retry: bool = False,
+        connection_info: dict | None = None,
     ):
-        """建立WebSocket连接"""
+        """建立WebSocket连接 - 增强版本"""
         try:
+            # 记录连接信息
+            self.connection_info[name] = {
+                "uri": uri,
+                "headers": headers,
+                "connection_type": "websocket",
+                "established_time": None,
+                "retry_count": 0,
+                **(connection_info or {}),
+            }
+
             # 如果是重试连接，记录重试次数
             if is_retry:
                 current_retry = self.connection_retry_counts.get(name, 0) + 1
@@ -50,41 +65,68 @@ class WebSocketManager:
                 # 首次连接时重置重试计数
                 self.connection_retry_counts[name] = 0
 
-            # 修复：使用更兼容的headers参数
+            # 增强的连接配置
             connect_kwargs = {
                 "uri": uri,
                 "ping_interval": self.config.get("heartbeat_interval", 60),
                 "ping_timeout": self.config.get("connection_timeout", 10),
+                "close_timeout": self.config.get("close_timeout", 10),
+                "max_size": self.config.get("max_message_size", 2**20),  # 1MB默认
             }
 
             # 只有在有headers时才添加
             if headers:
-                connect_kwargs["headers"] = headers
+                connect_kwargs["extra_headers"] = headers
+
+            # 添加SSL配置（如果需要）
+            if self.config.get("ssl_verify", True) is False:
+                connect_kwargs["ssl"] = False
 
             async with websockets.connect(**connect_kwargs) as websocket:
                 self.connections[name] = websocket
+                self.connection_info[name]["established_time"] = (
+                    asyncio.get_event_loop().time()
+                )
                 logger.info(f"[灾害预警] WebSocket连接成功: {name}")
 
                 # 处理消息
                 async for message in websocket:
                     try:
-                        # 记录原始消息 - 在处理器查找之前记录，确保所有消息都被记录
+                        # 记录原始消息 - 适配消息记录器
                         if self.message_logger:
-                            self.message_logger.log_websocket_message(
-                                name, message, uri
-                            )
+                            try:
+                                # 尝试使用消息记录器格式
+                                self.message_logger.log_raw_message(
+                                    source=f"websocket_{name}",
+                                    message_type="websocket_message",
+                                    raw_data=message,
+                                    connection_info={
+                                        "url": uri,
+                                        "connection_type": "websocket",
+                                        "handler": self._get_handler_name_for_connection(
+                                            name
+                                        ),
+                                        **self.connection_info[name],
+                                    },
+                                )
+                            except (TypeError, AttributeError):
+                                # 向后兼容：旧的消息记录器格式
+                                try:
+                                    self.message_logger.log_websocket_message(
+                                        name, message, uri
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"[灾害预警] 消息记录失败: {e}")
 
                         # 智能处理器查找（支持前缀匹配）
-                        if name in self.message_handlers:
-                            handler_name = name
-                        else:
-                            # 尝试前缀匹配（解决 fan_studio_usgs -> fan_studio 问题）
-                            handler_name = self._find_handler_by_prefix(name)
+                        handler_name = self._find_handler_by_prefix(name)
 
                         if handler_name:
-                            # 关键修复：传递连接名称给处理器，确保source信息正确
+                            # 增强：传递更多连接信息给处理器
                             await self.message_handlers[handler_name](
-                                message, connection_name=name
+                                message,
+                                connection_name=name,
+                                connection_info=self.connection_info[name],
                             )
                         else:
                             logger.warning(
@@ -92,39 +134,100 @@ class WebSocketManager:
                             )
                     except Exception as e:
                         logger.error(f"[灾害预警] 处理消息时出错 {name}: {e}")
-                        import traceback
-
                         logger.error(f"[灾害预警] 异常堆栈: {traceback.format_exc()}")
 
-        except Exception as e:
-            # 更详细的错误分析和日志
-            error_msg = str(e)
-            if "1012" in error_msg and "service restart" in error_msg:
-                logger.warning(
-                    f"[灾害预警] WebSocket连接收到服务重启通知 {name}: {error_msg}"
-                )
-                logger.info(f"[灾害预警] {name} 服务器正在重启，将在稍后自动重连")
-            elif "HTTP 502" in error_msg:
-                logger.warning(
-                    f"[灾害预警] WebSocket服务器网关错误 {name}: {error_msg}"
-                )
-                logger.info(f"[灾害预警] {name} 服务器可能正在维护，将稍后重试")
-            elif "connection refused" in error_msg.lower():
-                logger.warning(f"[灾害预警] WebSocket连接被拒绝 {name}: {error_msg}")
-                logger.info(f"[灾害预警] {name} 服务器可能暂时不可用")
-            else:
-                logger.error(f"[灾害预警] WebSocket连接失败 {name}: {error_msg}")
+                        # 增强的错误处理：根据错误类型决定是否重连
+                        if self._should_reconnect_on_error(e):
+                            await self._schedule_reconnect(name, uri, headers)
 
+        except Exception as e:
+            # 增强的错误分析和日志
+            error_msg = str(e)
+            error_type = type(e).__name__
+
+            # 记录详细的错误信息
+            logger.error(f"[灾害预警] 连接失败 {name}: {error_type} - {error_msg}")
+
+            # 分类处理不同类型的错误
+            if "1012" in error_msg and "service restart" in error_msg:
+                logger.warning(f"[灾害预警] 收到服务重启通知 {name}")
+                logger.info(f"[灾害预警] {name} 服务器正在重启，将在稍后自动重连")
+            elif "HTTP 502" in error_msg or "HTTP 503" in error_msg:
+                logger.warning(f"[灾害预警] 服务器网关错误 {name}")
+                logger.info(f"[灾害预警] {name} 服务器可能正在维护")
+            elif "connection refused" in error_msg.lower():
+                logger.warning(f"[灾害预警] 连接被拒绝 {name}")
+                logger.info(f"[灾害预警] {name} 服务器可能暂时不可用")
+            elif "timeout" in error_msg.lower():
+                logger.warning(f"[灾害预警] 连接超时 {name}")
+                logger.info(f"[灾害预警] {name} 连接超时，将稍后重试")
+            elif "ssl" in error_msg.lower() or "certificate" in error_msg.lower():
+                logger.warning(f"[灾害预警] SSL证书问题 {name}")
+                logger.info("[灾害预警] 请检查SSL配置或服务器证书")
+            else:
+                logger.error(f"[灾害预警] 未知错误 {name}: {error_msg}")
+
+            # 清理连接信息
             self.connections.pop(name, None)
+            self.connection_info.pop(name, None)
 
             # 启动重连任务
             if self.running:
                 await self._schedule_reconnect(name, uri, headers)
 
+    def _should_reconnect_on_error(self, error: Exception) -> bool:
+        """判断遇到错误时是否应该重连"""
+        error_msg = str(error).lower()
+
+        # 这些错误类型值得重试
+        reconnect_errors = [
+            "timeout",
+            "connection reset",
+            "connection refused",
+            "broken pipe",
+            "eof occurred",
+            "websocket connection closed",
+        ]
+
+        for error_type in reconnect_errors:
+            if error_type in error_msg:
+                return True
+
+        # SSL错误通常不需要重试（配置问题）
+        if "ssl" in error_msg or "certificate" in error_msg:
+            return False
+
+        # 认证错误不需要重试
+        if "401" in error_msg or "403" in error_msg:
+            return False
+
+        return True
+
+    def _get_handler_name_for_connection(self, connection_name: str) -> str:
+        """获取连接对应的处理器名称"""
+        # 定义连接名称前缀到处理器名称的映射
+        prefix_mappings = {
+            "fan_studio_": "fan_studio",
+            "p2p_": "p2p",
+            "wolfx_": "wolfx",
+        }
+
+        # 尝试前缀匹配
+        for prefix, handler_name in prefix_mappings.items():
+            if connection_name.startswith(prefix):
+                return handler_name
+
+        # 如果没有找到匹配，尝试更宽松的前缀匹配
+        for handler_name in self.message_handlers.keys():
+            if connection_name.startswith(handler_name):
+                return handler_name
+
+        return "unknown"
+
     async def _schedule_reconnect(
         self, name: str, uri: str, headers: dict | None = None
     ):
-        """计划重连"""
+        """计划重连 - 增强版本"""
         if name in self.reconnect_tasks:
             self.reconnect_tasks[name].cancel()
 
@@ -138,14 +241,23 @@ class WebSocketManager:
                 logger.error(
                     f"[灾害预警] {name} 重连失败，已达到最大重试次数 {max_retries}，将停止重连"
                 )
+                # 可以在这里添加通知机制
                 return
 
+            # 指数退避重试
+            base_delay = self.config.get("reconnect_interval", 30)
+            delay = base_delay * (2 ** min(current_retry, 3))  # 指数退避，最大8倍
+            max_delay = self.config.get("max_reconnect_delay", 300)  # 最大5分钟
+            delay = min(delay, max_delay)
+
+            logger.info(f"[灾害预警] {name} 将在 {delay} 秒后重试连接")
+
             try:
-                await asyncio.sleep(self.config.get("reconnect_interval", 30))
+                await asyncio.sleep(delay)
                 # 标记为重试连接
                 await self.connect(name, uri, headers, is_retry=True)
             except Exception as e:
-                logger.error(f"[灾害预警] 重连失败 {name}: {e}")
+                logger.error(f"[灾害预警] WebSocket管理器重连失败 {name}: {e}")
                 # 如果还有重试次数，继续安排重连
                 if self.connection_retry_counts.get(name, 0) < max_retries:
                     await self._schedule_reconnect(name, uri, headers)
@@ -153,34 +265,71 @@ class WebSocketManager:
         self.reconnect_tasks[name] = asyncio.create_task(reconnect())
 
     async def disconnect(self, name: str):
-        """断开连接"""
+        """断开连接 - 增强版本"""
         if name in self.connections:
             try:
                 await self.connections[name].close()
+                logger.info(f"[灾害预警] WebSocket连接已关闭: {name}")
             except Exception as e:
-                logger.error(f"[灾害预警] 断开连接时出错 {name}: {e}")
+                logger.error(f"[灾害预警] WebSocket断开连接时出错 {name}: {e}")
             finally:
                 self.connections.pop(name, None)
+                self.connection_info.pop(name, None)
 
         if name in self.reconnect_tasks:
             self.reconnect_tasks[name].cancel()
             self.reconnect_tasks.pop(name, None)
 
     async def send_message(self, name: str, message: str):
-        """发送消息"""
+        """发送消息 - 增强版本"""
         if name in self.connections:
             try:
                 await self.connections[name].send(message)
+                logger.debug(f"[灾害预警] 消息已发送到 {name}: {message[:100]}...")
             except Exception as e:
-                logger.error(f"[灾害预警] 发送消息失败 {name}: {e}")
+                logger.error(f"[灾害预警] WebSocket管理器发送消息失败 {name}: {e}")
+                # 可以在这里实现消息重试机制
+        else:
+            logger.warning(f"[灾害预警] WebSocket管理器尝试发送到未连接的连接: {name}")
+
+    def get_connection_status(self, name: str) -> dict[str, Any]:
+        """获取连接状态信息"""
+        status = {
+            "connected": name in self.connections,
+            "retry_count": self.connection_retry_counts.get(name, 0),
+            "has_handler": name in self.message_handlers,
+        }
+
+        if name in self.connection_info:
+            info = self.connection_info[name]
+            status.update(
+                {
+                    "uri": info.get("uri"),
+                    "established_time": info.get("established_time"),
+                    "connection_type": info.get("connection_type"),
+                }
+            )
+
+        return status
+
+    def get_all_connections_status(self) -> dict[str, dict[str, Any]]:
+        """获取所有连接的状态信息"""
+        return {
+            name: self.get_connection_status(name)
+            for name in self.connection_info.keys()
+        }
 
     async def start(self):
-        """启动管理器"""
+        """启动管理器 - 增强版本"""
         self.running = True
-        logger.info("[灾害预警] WebSocket管理器已启动")
+
+        # 可以在这里添加初始化检查
+        if not self.message_handlers:
+            logger.warning("[灾害预警] 没有注册任何消息处理器")
 
     async def stop(self):
-        """停止管理器"""
+        """停止管理器 - 增强版本"""
+        logger.info("[灾害预警] WebSocket管理器正在停止...")
         self.running = False
 
         # 取消所有重连任务
@@ -191,15 +340,20 @@ class WebSocketManager:
         for name in list(self.connections.keys()):
             await self.disconnect(name)
 
+        # 清理所有状态
+        self.connections.clear()
+        self.connection_info.clear()
+        self.connection_retry_counts.clear()
+
         logger.info("[灾害预警] WebSocket管理器已停止")
 
     def _find_handler_by_prefix(self, connection_name: str) -> str | None:
-        """通过前缀匹配查找处理器名称"""
+        """通过前缀匹配查找处理器名称 - 增强版本"""
         # 定义连接名称前缀到处理器名称的映射
         prefix_mappings = {
-            "fan_studio_": "fan_studio",  # fan_studio_usgs -> fan_studio
-            "p2p_": "p2p",  # p2p_main -> p2p
-            "wolfx_": "wolfx",  # wolfx_japan_jma_eew -> wolfx
+            "fan_studio_": "fan_studio",
+            "p2p_": "p2p",
+            "wolfx_": "wolfx",
         }
 
         # 尝试前缀匹配
@@ -221,8 +375,12 @@ class WebSocketManager:
         return None
 
 
+# 保持向后兼容的别名
+WebSocketManager = WebSocketManager
+
+
 class HTTPDataFetcher:
-    """HTTP数据获取器"""
+    """HTTP数据获取器 - 保持不变"""
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
@@ -235,8 +393,6 @@ class HTTPDataFetcher:
         return self
 
     async def __aexit__(self, exc_type=None, exc_val=None, exc_tb=None):
-        # 忽略异常参数，仅用于资源清理
-        _ = exc_type, exc_val, exc_tb  # 抑制未使用变量警告
         if self.session:
             await self.session.close()
 
@@ -258,12 +414,13 @@ class HTTPDataFetcher:
 
 
 class GlobalQuakeClient:
-    """Global Quake TCP客户端"""
+    """Global Quake TCP客户端 - 保持不变"""
 
     def __init__(self, config: dict[str, Any], message_logger=None):
         self.config = config
         self.message_logger = message_logger
-        # 关键修复：确保服务器地址是字符串，而不是布尔值
+
+        # 服务器配置（保持不变）
         primary_server = config.get("primary_server", "server-backup.globalquake.net")
         secondary_server = config.get(
             "secondary_server", "server-backup.globalquake.net"
@@ -311,10 +468,12 @@ class GlobalQuakeClient:
             try:
                 logger.info(f"[灾害预警] 正在连接Global Quake服务器 {server}:{port}")
                 self.reader, self.writer = await asyncio.open_connection(server, port)
-                logger.info(f"[灾害预警] Global Quake连接成功: {server}:{port}")
+                logger.info(f"[灾害预警] Global Quake 服务器连接成功: {server}:{port}")
                 return True
             except Exception as e:
-                logger.error(f"[灾害预警] Global Quake连接失败 {server}:{port}: {e}")
+                logger.error(
+                    f"[灾害预警] Global Quake服务器连接失败 {server}:{port}: {e}"
+                )
 
         return False
 
@@ -334,34 +493,26 @@ class GlobalQuakeClient:
                 message = data.decode("utf-8").strip()
                 if message and self.message_handler:
                     try:
-                        # 添加Global Quake消息调试日志
-                        logger.debug(
-                            f"[灾害预警] Global Quake收到原始消息: {message[:100]}..."
+                        logger.info(
+                            f"[灾害预警] Global Quake收到原始消息: {message[:128]}..."
                         )
 
                         # 记录原始消息
                         if self.message_logger:
-                            current_server = (
-                                self.writer.get_extra_info("peername")[0]
-                                if self.writer
-                                else "unknown"
-                            )
-                            current_port = (
-                                self.writer.get_extra_info("peername")[1]
-                                if self.writer
-                                else 0
-                            )
-                            logger.debug(
-                                f"[灾害预警] 准备记录Global Quake TCP消息 - 服务器: {current_server}:{current_port}"
-                            )
-                            self.message_logger.log_tcp_message(
-                                current_server, current_port, message
-                            )
-                            logger.debug("[灾害预警] Global Quake TCP消息记录完成")
-                        else:
-                            logger.debug(
-                                "[灾害预警] 消息记录器未启用，无法记录Global Quake消息"
-                            )
+                            try:
+                                self.message_logger.log_tcp_message(
+                                    self.writer.get_extra_info("peername")[0]
+                                    if self.writer
+                                    else "unknown",
+                                    self.writer.get_extra_info("peername")[1]
+                                    if self.writer
+                                    else 0,
+                                    message,
+                                )
+                            except Exception as e:
+                                logger.warning(
+                                    f"[灾害预警] Global Quake消息记录失败: {e}"
+                                )
 
                         await self.message_handler(message)
                     except Exception as e:
