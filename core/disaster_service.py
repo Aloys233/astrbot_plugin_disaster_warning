@@ -109,6 +109,7 @@ class DisasterWarningService:
                         "fan_studio_cwa": "cwa_fanstudio",
                         "fan_studio_cenc": "cenc_fanstudio",
                         "fan_studio_usgs": "usgs_fanstudio",
+                        "fan_studio_jma": "jma_fanstudio",
                         "fan_studio_weather": "china_weather_fanstudio",
                         "fan_studio_tsunami": "china_tsunami_fanstudio",
                     }
@@ -453,47 +454,68 @@ class DisasterWarningService:
         if isinstance(fan_studio_config, dict) and fan_studio_config.get(
             "enabled", True
         ):
+            # FAN Studio 服务器地址
+            # 正式服务器: wss://ws.fanstudio.tech/[路径]
+            # 备用服务器: wss://ws.fanstudio.hk/[路径]
+            primary_server = "wss://ws.fanstudio.tech"
+            backup_server = "wss://ws.fanstudio.hk"
+
             # 中国地震网地震预警
             if fan_studio_config.get("china_earthquake_warning", True):
                 self.connections["fan_studio_cea"] = {
-                    "url": "wss://ws.fanstudio.tech/cea",
+                    "url": f"{primary_server}/cea",
+                    "backup_url": f"{backup_server}/cea",
                     "handler": "fan_studio",
                 }
 
             # 台湾中央气象署强震即时警报
             if fan_studio_config.get("taiwan_cwa_earthquake", True):
                 self.connections["fan_studio_cwa"] = {
-                    "url": "wss://ws.fanstudio.tech/cwa",
+                    "url": f"{primary_server}/cwa",
+                    "backup_url": f"{backup_server}/cwa",
                     "handler": "fan_studio",
                 }
 
             # 中国地震台网地震测定
             if fan_studio_config.get("china_cenc_earthquake", True):
                 self.connections["fan_studio_cenc"] = {
-                    "url": "wss://ws.fanstudio.tech/cenc",
+                    "url": f"{primary_server}/cenc",
+                    "backup_url": f"{backup_server}/cenc",
                     "handler": "fan_studio",
                 }
 
             # USGS地震测定
             if fan_studio_config.get("usgs_earthquake", True):
                 self.connections["fan_studio_usgs"] = {
-                    "url": "wss://ws.fanstudio.tech/usgs",
+                    "url": f"{primary_server}/usgs",
+                    "backup_url": f"{backup_server}/usgs",
                     "handler": "fan_studio",
                 }
 
             # 中国气象局气象预警
             if fan_studio_config.get("china_weather_alarm", True):
                 self.connections["fan_studio_weather"] = {
-                    "url": "wss://ws.fanstudio.tech/weatheralarm",
+                    "url": f"{primary_server}/weatheralarm",
+                    "backup_url": f"{backup_server}/weatheralarm",
                     "handler": "fan_studio",
                 }
 
             # 自然资源部海啸预警
             if fan_studio_config.get("china_tsunami", True):
                 self.connections["fan_studio_tsunami"] = {
-                    "url": "wss://ws.fanstudio.tech/tsunami",
+                    "url": f"{primary_server}/tsunami",
+                    "backup_url": f"{backup_server}/tsunami",
                     "handler": "fan_studio",
                 }
+
+            # 日本气象厅地震预警
+            if fan_studio_config.get("japan_jma_earthquake", True):
+                self.connections["fan_studio_jma"] = {
+                    "url": f"{primary_server}/jma",
+                    "backup_url": f"{backup_server}/jma",
+                    "handler": "fan_studio",
+                }
+
 
         # P2P连接配置
         p2p_config = data_sources.get("p2p_earthquake", {})
@@ -608,6 +630,7 @@ class DisasterWarningService:
                     "handler_type": conn_config["handler"],
                     "data_source": self._get_data_source_from_connection(conn_name),
                     "established_time": None,
+                    "backup_url": conn_config.get("backup_url"),  # 传递备用服务器URL
                 }
 
                 task = asyncio.create_task(
@@ -618,9 +641,13 @@ class DisasterWarningService:
                     )
                 )
                 self.connection_tasks.append(task)
+                
+                # 日志中显示备用服务器信息
+                backup_info = f", 备用: {conn_config.get('backup_url')}" if conn_config.get('backup_url') else ""
                 logger.info(
-                    f"[灾害预警] 已启动WebSocket连接任务: {conn_name} (数据源: {connection_info['data_source']})"
+                    f"[灾害预警] 已启动WebSocket连接任务: {conn_name} (数据源: {connection_info['data_source']}{backup_info})"
                 )
+
 
     def _get_data_source_from_connection(self, connection_name: str) -> str:
         """从连接名称获取数据源ID"""
@@ -631,6 +658,7 @@ class DisasterWarningService:
             "fan_studio_cwa": "cwa_fanstudio",
             "fan_studio_cenc": "cenc_fanstudio",
             "fan_studio_usgs": "usgs_fanstudio",
+            "fan_studio_jma": "jma_fanstudio",
             "fan_studio_weather": "china_weather_fanstudio",
             "fan_studio_tsunami": "china_tsunami_fanstudio",
             # P2P
@@ -652,36 +680,34 @@ class DisasterWarningService:
                 "global_quake", {}
             )
             if isinstance(global_quake_config, dict) and global_quake_config.get(
-                "enabled", True
+                "enabled", False
             ):
-                # 检查是否有配置服务器地址
+                # 从 data_sources.global_quake 读取服务器配置
                 primary_server = global_quake_config.get(
                     "primary_server", "server-backup.globalquake.net"
                 )
                 secondary_server = global_quake_config.get(
                     "secondary_server", "server-backup.globalquake.net"
                 )
-
-                # 处理布尔值配置问题
-                if isinstance(primary_server, bool):
-                    primary_server = (
-                        "server-backup.globalquake.net" if primary_server else ""
-                    )
-                if isinstance(secondary_server, bool):
-                    secondary_server = (
-                        "server-backup.globalquake.net" if secondary_server else ""
-                    )
-
-                # 端口配置：传递给GlobalQuakeClient构造函数使用
-                # primary_port = global_quake_config.get("primary_port", 38000)  # 通过config传递，不直接使用
-                # secondary_port = global_quake_config.get("secondary_port", 38000)  # 通过config传递，不直接使用
+                primary_port = global_quake_config.get("primary_port", 38000)
+                secondary_port = global_quake_config.get("secondary_port", 38000)
 
                 # 确保服务器地址是有效的字符串
                 if isinstance(primary_server, str) and primary_server.strip():
-                    logger.info("[灾害预警] Global Quake主服务器配置有效，准备启动连接")
+                    logger.info(
+                        f"[灾害预警] Global Quake配置: 主服务器={primary_server}:{primary_port}, 备用服务器={secondary_server}:{secondary_port}"
+                    )
+
+                    # 构建配置传递给 GlobalQuakeClient
+                    client_config = {
+                        "primary_server": primary_server,
+                        "primary_port": primary_port,
+                        "secondary_server": secondary_server,
+                        "secondary_port": secondary_port,
+                    }
 
                     global_quake_client = GlobalQuakeClient(
-                        global_quake_config, self.message_logger
+                        client_config, self.message_logger
                     )
 
                     # 注册消息处理器
@@ -710,6 +736,7 @@ class DisasterWarningService:
 
         except Exception as e:
             logger.error(f"[灾害预警] 启动Global Quake连接失败: {e}")
+
 
     async def _start_scheduled_http_fetch(self):
         """启动定时HTTP数据获取"""

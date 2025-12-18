@@ -281,17 +281,11 @@ class EventDeduplicator:
                         logger.info(
                             f"[灾害预警] 允许同一数据源更新: {event.source.value}"
                         )
-                        # 更新记录
-                        source_events[source_id] = {
-                            "timestamp": current_time,
-                            "source": event.source.value,
-                            "latitude": earthquake.latitude or 0,
-                            "longitude": earthquake.longitude or 0,
-                            "magnitude": earthquake.magnitude or 0,
-                            "info_type": earthquake.info_type or "",
-                            "updates": getattr(earthquake, "updates", 1),
-                            "is_final": getattr(earthquake, "is_final", False),
-                        }
+                        # 更新记录 - 添加当前报数到已处理集合
+                        current_report = getattr(earthquake, "updates", 1)
+                        existing_event["processed_reports"].add(current_report)
+                        existing_event["timestamp"] = current_time
+                        existing_event["is_final"] = existing_event["is_final"] or getattr(earthquake, "is_final", False)
                         return True
                     else:
                         logger.info(
@@ -303,6 +297,7 @@ class EventDeduplicator:
 
             # 不同数据源，允许推送（允许多数据源推送同一事件）
             logger.info(f"[灾害预警] 不同数据源，允许推送: {event.source.value}")
+            current_report = getattr(earthquake, "updates", 1)
             self.recent_events[event_fingerprint][source_id] = {
                 "timestamp": current_time,
                 "source": event.source.value,
@@ -310,12 +305,13 @@ class EventDeduplicator:
                 "longitude": earthquake.longitude or 0,
                 "magnitude": earthquake.magnitude or 0,
                 "info_type": earthquake.info_type or "",
-                "updates": getattr(earthquake, "updates", 1),
+                "processed_reports": {current_report},  # 使用集合存储已处理的报数
                 "is_final": getattr(earthquake, "is_final", False),
             }
             return True
 
         # 新事件，记录并允许推送
+        current_report = getattr(earthquake, "updates", 1)
         self.recent_events[event_fingerprint] = {
             source_id: {
                 "timestamp": current_time,
@@ -324,7 +320,7 @@ class EventDeduplicator:
                 "longitude": earthquake.longitude or 0,
                 "magnitude": earthquake.magnitude or 0,
                 "info_type": earthquake.info_type or "",
-                "updates": getattr(earthquake, "updates", 1),
+                "processed_reports": {current_report},  # 使用集合存储已处理的报数
                 "is_final": getattr(earthquake, "is_final", False),
             }
         }
@@ -364,17 +360,24 @@ class EventDeduplicator:
         self, current_earthquake: EarthquakeData, existing_event: dict
     ) -> bool:
         """判断是否应该允许事件更新"""
-        # 报数更新检查
-        current_updates = getattr(current_earthquake, "updates", 1)
-        existing_updates = existing_event.get("updates", 1)
-
-        if current_updates > existing_updates:
+        # 获取当前报数
+        current_report = getattr(current_earthquake, "updates", 1)
+        
+        # 获取已处理的报数集合（兼容旧格式）
+        processed_reports = existing_event.get("processed_reports", set())
+        if not isinstance(processed_reports, set):
+            # 兼容旧的 updates 字段格式
+            old_updates = existing_event.get("updates", 1)
+            processed_reports = {old_updates}
+        
+        # 检查当前报数是否已处理过
+        if current_report not in processed_reports:
             logger.info(
-                f"[灾害预警] 报数更新: 第{existing_updates}报 -> 第{current_updates}报"
+                f"[灾害预警] 新报数: 第{current_report}报 (已处理: {sorted(processed_reports)})"
             )
             return True
 
-        # 最终报检查
+        # 最终报检查 - 即使报数已处理，如果变为最终报也允许
         if getattr(current_earthquake, "is_final", False) and not existing_event.get(
             "is_final", False
         ):
@@ -401,6 +404,7 @@ class EventDeduplicator:
             )
             return True
 
+        logger.debug(f"[灾害预警] 报数 {current_report} 已处理过，跳过")
         return False
 
     def _get_source_id(self, event: DisasterEvent) -> str:
@@ -414,7 +418,6 @@ class EventDeduplicator:
             DataSource.P2P_EARTHQUAKE.value: "jma_p2p_info",
             DataSource.WOLFX_JMA_EEW.value: "jma_wolfx",
             DataSource.FAN_STUDIO_CENC.value: "cenc_fanstudio",
-            DataSource.WOLFX_CENC_EEW.value: "cenc_wolfx",
             DataSource.FAN_STUDIO_USGS.value: "usgs_fanstudio",
             DataSource.GLOBAL_QUAKE.value: "global_quake",
         }
@@ -680,8 +683,6 @@ class MessagePushManager:
         else:
             # 未知事件类型，使用基础格式化
             logger.warning(f"[灾害预警] 未知事件类型: {type(event.data)}")
-            message_text = f"🚨[未知事件]\n📋事件ID：{event.id}\n⏰时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-
             message_text = f"🚨[未知事件]\n📋事件ID：{event.id}\n⏰时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
 
         # 添加本地预估信息
