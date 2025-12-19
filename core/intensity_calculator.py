@@ -67,25 +67,30 @@ class IntensityCalculator:
         return max(0.0, min(12.0, intensity))
 
     @staticmethod
-    def get_intensity_description(intensity: float) -> tuple[str, str]:
+    def get_intensity_description(intensity: float) -> str:
         """
-        获取烈度描述和颜色
+        获取烈度描述（带颜色Emoji）
+        参考 GB/T 17742-2020 中国地震烈度表
         """
         if intensity < 1.0:
-            return "无感", "#FFFFFF"
+            return "⚪ 无感"
         elif intensity < 2.0:
-            return "微有感", "#E1F5FE"
+            return "⚪ 微有感"
         elif intensity < 3.0:
-            return "轻微", "#81D4FA"
+            return "🔵 轻微有感"
         elif intensity < 4.0:
-            return "明显", "#4FC3F7"
+            return "🔵 室内有感"
         elif intensity < 5.0:
-            return "强", "#FFF176"
+            return "🟡 震感明显"
         elif intensity < 6.0:
-            return "强烈", "#FFB74D"
+            return "🟡 震感强烈"
         elif intensity < 7.0:
-            return "剧烈", "#FF8A65"
+            return "🟠 惊慌逃生"
         elif intensity < 8.0:
-            return "严重", "#E57373"
+            return "🟠 房屋损坏"
+        elif intensity < 9.0:
+            return "🔴 严重破坏"
+        elif intensity < 10.0:
+            return "🔴 毁灭性"
         else:
-            return "毁灭", "#D32F2F"
+            return "🟣 极度毁灭"
