@@ -48,6 +48,12 @@
             "default": true,
             "hint": "通过FAN Studio WebSocket接收中国地震台网地震测定信息"
           },
+          "japan_jma_eew": {
+            "description": "日本气象厅（JMA）：紧急地震速报",
+            "type": "bool",
+            "default": true,
+            "hint": "通过FAN Studio WebSocket接收日本气象厅地震预警信息"
+          },
           "japan_jma_earthquake": {
             "description": "日本气象厅（JMA）：地震情报",
             "type": "bool",
@@ -147,13 +153,13 @@
       "global_quake": {
         "description": "Global Quake 服务器推送",
         "type": "object",
-        "hint": "通过全球测站实时测算，精度有限，目前功能不稳定",
+        "hint": "通过全球测站实时测算，精度有限",
         "items": {
           "enabled": {
             "description": "启用Global Quake数据源",
             "type": "bool",
-            "hint": "测试性功能，目前基本处于不可用状态，建议关闭",
-            "default": false
+            "hint": "测试性功能，目前基本处于不可用状态",
+            "default": true
           },
           "primary_server": {
             "description": "主服务器地址",
@@ -202,20 +208,20 @@
       "place_name": {
         "description": "本地地名",
         "type": "string",
-        "hint": "显示在消息中的地名",
+        "hint": "用于在推送的预警消息中标识您的“本地监控”位置",
         "default": "本地"
-      },
-      "intensity_threshold": {
-        "description": "通知阈值(烈度)",
-        "type": "float",
-        "hint": "只有当本地预估烈度>=此值时才通知",
-        "default": 2.0
       },
       "strict_mode": {
         "description": "严格过滤模式",
         "type": "bool",
-        "hint": "开启后，如果本地烈度未达标，将忽略所有通知（包括大地震）",
+        "hint": "开启后，如果本地烈度未达标，将忽略所有通知（包括其他地区的大地震）",
         "default": false
+      },
+      "intensity_threshold": {
+        "description": "通知阈值(烈度)",
+        "type": "float",
+        "hint": "只有当本地预估烈度大于等于此值时才通知",
+        "default": 4.0
       }
     }
   },
@@ -295,7 +301,7 @@
   "push_frequency_control": {
     "description": "推送频率控制",
     "type": "object",
-    "hint": "测试性功能，不保证稳定性",
+    "hint": "测试性功能，用于控制 EEW 的推送频率，不保证稳定性",
     "items": {
       "push_every_n_reports": {
         "description": "每收到N报推送一次",
@@ -323,7 +329,7 @@
       "include_map": {
         "description": "是否包含地图链接",
         "type": "bool",
-        "hint": "仅地震信息，会在消息末尾添加地图链接",
+        "hint": "适用于地震信息，会在消息末尾添加地图链接",
         "default": true
       },
       "map_provider": {
@@ -343,6 +349,12 @@
         "type": "int",
         "hint": "1-20，数值越大越详细 (部分地图服务提供商可能不支持该配置)",
         "default": 5
+      },
+      "detailed_jma_intensity": {
+        "description": "详细显示JMA区域震度",
+        "type": "bool",
+        "hint": "开启后，日本气象厅地震情报将显示所有观测到震度1及以上的区域，而不仅是最大震度区域",
+        "default": false
       }
     }
   },
@@ -373,12 +385,6 @@
         "type": "int",
         "hint": "单位：秒，不要设置超过600的数值，否则可能被服务器断开连接",
         "default": 120
-      },
-      "max_reconnect_delay": {
-        "description": "最大重连延迟",
-        "type": "int",
-        "hint": "单位：秒，指数退避的最大等待时间",
-        "default": 300
       }
     }
   },
