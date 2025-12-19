@@ -1,5 +1,7 @@
 import asyncio
 import sys
+import traceback
+from datetime import datetime
 
 # Windows平台WebSocket兼容性修复
 # 解决websockets 12.0+ 在Windows上的ProactorEventLoop兼容性问题
@@ -11,7 +13,8 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
 
 from .core.disaster_service import get_disaster_service, stop_disaster_service
-from .models.models import DisasterEvent, EarthquakeData, DataSource, DisasterType
+from .models.models import DisasterEvent, EarthquakeData, DataSource, DisasterType, get_data_source_from_id, DATA_SOURCE_MAPPING
+from .utils.fe_regions import translate_place_name
 
 
 class DisasterWarningPlugin(Star):
@@ -72,15 +75,16 @@ class DisasterWarningPlugin(Star):
         help_text = """🚨 灾害预警插件使用说明
 
 📋 可用命令：
+• /灾害预警 - 显示此帮助信息
 • /灾害预警状态 - 查看服务运行状态
 • /灾害预警测试 [群号] [灾害类型] [格式] - 测试推送功能
+• /灾害预警模拟 <纬度> <经度> <震级> [深度] [数据源] - 模拟地震事件
 • /灾害预警统计 - 查看推送统计信息
 • /灾害预警配置 查看 - 查看当前配置摘要
 • /灾害预警去重统计 - 查看事件去重统计
 • /灾害预警日志 - 查看原始消息日志统计
 • /灾害预警日志开关 - 开关原始消息日志记录
 • /灾害预警日志清除 - 清除所有原始消息日志
-• /灾害预警帮助 - 显示此帮助信息
 
 🧪 测试功能说明：
 /灾害预警测试 [群号] [灾害类型] [格式]
@@ -549,7 +553,7 @@ class DisasterWarningPlugin(Star):
 📈 当前记录：{stats["recent_events_count"]} 个事件
 
 💡 说明：
-• 同一地震事件只推送最先接收到信息的数据源
+• 插件会允许多个数据源对同一地震事件进行推送
 • 时间窗口内（1分钟）的相似事件会被去重
 • 位置差异在20公里内视为同一事件
 • 震级差异在0.5级内视为同一事件"""
@@ -569,6 +573,7 @@ class DisasterWarningPlugin(Star):
                 "china_earthquake_warning": "中国地震网地震预警",
                 "taiwan_cwa_earthquake": "台湾中央气象署强震即时警报",
                 "china_cenc_earthquake": "中国地震台网地震测定",
+                "japan_jma_eew": "日本气象厅紧急地震速报",
                 "japan_jma_earthquake": "日本气象厅地震情报",
                 "usgs_earthquake": "USGS地震测定",
                 "china_weather_alarm": "中国气象局气象预警",
@@ -600,13 +605,16 @@ class DisasterWarningPlugin(Star):
         lon: float,
         magnitude: float,
         depth: float = 10.0,
-        source: str = "cea_fanstudio",
-        place_name: str = "模拟测试地点"
+        source: str = "cea_fanstudio"
     ):
         """模拟地震事件测试预警响应
-        格式：/灾害预警模拟 <纬度> <经度> <震级> [深度] [数据源] [地名]
-        数据源可选：cea_fanstudio(默认), usgs_fanstudio, jma_p2p 等
-        注意：地名如果有空格，请使用引号包裹，例如 "Test Place"
+        格式：/灾害预警模拟 <纬度> <经度> <震级> [深度] [数据源]
+        
+        常用数据源ID：
+        • cea_fanstudio (中国地震预警网 - 默认)
+        • jma_p2p (日本气象厅P2P)
+        • usgs_fanstudio (USGS)
+        • cwa_fanstudio (台湾中央气象署)
         """
         if not self.disaster_service or not self.disaster_service.message_manager:
             yield event.plain_result("❌ 服务未启动")
@@ -614,8 +622,6 @@ class DisasterWarningPlugin(Star):
 
         try:
             # 获取数据源
-            from .models.models import get_data_source_from_id, DataSource, DATA_SOURCE_MAPPING
-            
             data_source = get_data_source_from_id(source)
             if not data_source:
                 valid_sources = ", ".join(DATA_SOURCE_MAPPING.keys())
@@ -623,11 +629,8 @@ class DisasterWarningPlugin(Star):
                 return
 
             # 1. 构造模拟数据
-            from datetime import datetime
-            from .utils.fe_regions import translate_place_name
-            
-            # 尝试翻译地名
-            final_place_name = translate_place_name(place_name, lat, lon)
+            # 自动根据传入的经纬度生成地名
+            final_place_name = translate_place_name("模拟震中", lat, lon)
             
             earthquake = EarthquakeData(
                 id=f"sim_{int(datetime.now().timestamp())}",
@@ -675,9 +678,9 @@ class DisasterWarningPlugin(Star):
             if manager.intensity_filter:
                 if manager.intensity_filter.should_filter(earthquake):
                     global_pass = False
-                    report_lines.append(f"❌ **全局过滤**: 拦截 (不满足最小震级/烈度要求)")
+                    report_lines.append(f"❌ 全局过滤: 拦截 (不满足最小震级/烈度要求)")
                 else:
-                    report_lines.append(f"✅ **全局过滤**: 通过")
+                    report_lines.append(f"✅ 全局过滤: 通过")
             
             # 3. 检查本地监控 (Local Monitor)
             local_pass = True
@@ -691,19 +694,19 @@ class DisasterWarningPlugin(Star):
                 }
 
                 if allowed:
-                    report_lines.append(f"✅ **本地监控**: 触发")
+                    report_lines.append(f"✅ 本地监控: 触发")
                 else:
                     local_pass = False
-                    report_lines.append(f"❌ **本地监控**: 拦截 (严格模式生效中)")
+                    report_lines.append(f"❌ 本地监控: 拦截 (严格模式生效中)")
                     
                 report_lines.append(f"   ⦁ 严格模式: {'开启' if manager.local_monitor.strict_mode else '关闭 (仅计算不拦截)'}")
                 report_lines.extend([
-                    f"   ⦁ 距本地: {dist:.1f}km",
-                    f"   ⦁ 预估本地烈度: {inte:.1f}级",
-                    f"   ⦁ 本地阈值: {manager.local_monitor.threshold}级"
+                    f"   ⦁ 距本地: {dist:.1f} km",
+                    f"   ⦁ 预估最大本地烈度: {inte:.1f}",
+                    f"   ⦁ 本地烈度阈值: {manager.local_monitor.threshold}"
                 ])
             else:
-                report_lines.append(f"ℹ️ **本地监控**: 未启用")
+                report_lines.append(f"ℹ️ **本地监控: 未启用")
 
             # 发送报告
             yield event.plain_result("\n".join(report_lines))
@@ -721,14 +724,12 @@ class DisasterWarningPlugin(Star):
                     # 直接使用context发送消息，绕过command generator
                     await self.context.send_message(event.unified_msg_origin, msg_chain)
                 except Exception as build_e:
-                     import traceback
                      logger.error(f"[灾害预警] 消息构建失败: {build_e}\n{traceback.format_exc()}")
                      yield event.plain_result(f"❌ 消息构建失败: {build_e}")
             else:
-                yield event.plain_result("\n⛔ **结论**: 该事件不会触发预警推送。")
+                yield event.plain_result("\n⛔ 结论: 该事件不会触发预警推送。")
 
         except Exception as e:
-            import traceback
             error_trace = traceback.format_exc()
             logger.error(f"[灾害预警] 模拟测试失败: {e}\n{error_trace}")
             yield event.plain_result(f"❌ 模拟失败: {e}")
