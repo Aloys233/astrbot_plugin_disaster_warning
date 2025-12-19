@@ -9,6 +9,7 @@ import time
 import traceback
 from datetime import datetime
 from typing import Any
+from collections import deque
 
 from astrbot.api import logger
 
@@ -1250,6 +1251,9 @@ class ChinaWeatherHandler(BaseDataHandler):
 
     def __init__(self, message_logger=None):
         super().__init__("china_weather_fanstudio", message_logger)
+        # 缓存最近处理过的预警ID，防止重连后重复推送
+        # 使用deque自动维护固定长度，maxlen=10应该足够覆盖短时间内的重复
+        self._processed_weather_ids = deque(maxlen=10)
 
     def _parse_data(self, data: dict[str, Any]) -> DisasterEvent | None:
         """解析中国气象局气象预警数据"""
@@ -1270,6 +1274,12 @@ class ChinaWeatherHandler(BaseDataHandler):
 
             # 心跳包检测 - 在详细处理前进行快速过滤
             if self._is_heartbeat_message(msg_data):
+                return None
+
+            # 去重检查
+            weather_id = msg_data.get("id")
+            if weather_id and weather_id in self._processed_weather_ids:
+                logger.info(f"[灾害预警] {self.source_id} 检测到重复的气象预警ID: {weather_id}，忽略")
                 return None
 
             # 检查关键字段
@@ -1334,6 +1344,10 @@ class ChinaWeatherHandler(BaseDataHandler):
                 latitude=msg_data.get("latitude"),
                 raw_data=msg_data,
             )
+
+            # 记录ID到缓存
+            if weather.id:
+                self._processed_weather_ids.append(weather.id)
 
             logger.info(
                 f"[灾害预警] 气象预警解析成功: {weather.headline}, 生效时间: {weather.issue_time}"
