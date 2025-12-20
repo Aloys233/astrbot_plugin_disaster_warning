@@ -5,7 +5,7 @@
 
 import urllib.parse
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import astrbot.api.message_components as Comp
@@ -17,18 +17,18 @@ from ..models.data_source_config import (
     get_scale_based_sources,
     get_sources_needing_report_control,
 )
-from ..utils.message_formatters import (
-    BaseMessageFormatter,
-    format_earthquake_message,
-    format_tsunami_message,
-    format_weather_message,
-)
 from ..models.models import (
     DataSource,
     DisasterEvent,
     EarthquakeData,
     TsunamiData,
     WeatherAlarmData,
+)
+from ..utils.message_formatters import (
+    BaseMessageFormatter,
+    format_earthquake_message,
+    format_tsunami_message,
+    format_weather_message,
 )
 from .intensity_calculator import IntensityCalculator
 
@@ -116,8 +116,10 @@ class USGSFilter:
 
         return False
 
+
 class LocalIntensityFilter:
     """本地烈度过滤器"""
+
     def __init__(self, config: dict):
         self.enabled = config.get("enabled", False)
         self.latitude = config.get("latitude", 0.0)
@@ -135,26 +137,27 @@ class LocalIntensityFilter:
             return True, 0.0, 0.0
 
         if earthquake.latitude is None or earthquake.longitude is None:
-             # 如果没有坐标，严格模式下过滤，非严格模式下允许
+            # 如果没有坐标，严格模式下过滤，非严格模式下允许
             return not self.strict_mode, 0.0, 0.0
 
         distance = IntensityCalculator.calculate_distance(
-            earthquake.latitude, earthquake.longitude,
-            self.latitude, self.longitude
+            earthquake.latitude, earthquake.longitude, self.latitude, self.longitude
         )
-        
+
         intensity = IntensityCalculator.calculate_estimated_intensity(
             earthquake.magnitude or 0.0,
             distance,
             earthquake.depth or 10.0,
-            event_longitude=earthquake.longitude # 传入经度以区分东西部
+            event_longitude=earthquake.longitude,  # 传入经度以区分东西部
         )
-        
+
         if self.strict_mode:
             if intensity < self.threshold:
-                logger.info(f"[灾害预警] 本地烈度 {intensity:.1f} < 阈值 {self.threshold}，严格模式已过滤")
+                logger.info(
+                    f"[灾害预警] 本地烈度 {intensity:.1f} < 阈值 {self.threshold}，严格模式已过滤"
+                )
                 return False, distance, intensity
-        
+
         return True, distance, intensity
 
 
@@ -288,7 +291,9 @@ class EventDeduplicator:
                         current_report = getattr(earthquake, "updates", 1)
                         existing_event["processed_reports"].add(current_report)
                         existing_event["timestamp"] = current_time
-                        existing_event["is_final"] = existing_event["is_final"] or getattr(earthquake, "is_final", False)
+                        existing_event["is_final"] = existing_event[
+                            "is_final"
+                        ] or getattr(earthquake, "is_final", False)
                         return True
                     else:
                         logger.info(
@@ -303,9 +308,11 @@ class EventDeduplicator:
             current_report = getattr(earthquake, "updates", 1)
             # 提取JMA issue_type
             issue_type = ""
-            if hasattr(earthquake, "raw_data") and isinstance(earthquake.raw_data, dict):
+            if hasattr(earthquake, "raw_data") and isinstance(
+                earthquake.raw_data, dict
+            ):
                 issue_type = earthquake.raw_data.get("issue", {}).get("type", "")
-            
+
             self.recent_events[event_fingerprint][source_id] = {
                 "timestamp": current_time,
                 "source": event.source.value,
@@ -321,7 +328,7 @@ class EventDeduplicator:
 
         # 新事件，记录并允许推送
         current_report = getattr(earthquake, "updates", 1)
-        
+
         # 提取JMA issue_type
         issue_type = ""
         if hasattr(earthquake, "raw_data") and isinstance(earthquake.raw_data, dict):
@@ -378,14 +385,14 @@ class EventDeduplicator:
         """判断是否应该允许事件更新"""
         # 获取当前报数
         current_report = getattr(current_earthquake, "updates", 1)
-        
+
         # 获取已处理的报数集合（兼容旧格式）
         processed_reports = existing_event.get("processed_reports", set())
         if not isinstance(processed_reports, set):
             # 兼容旧的 updates 字段格式
             old_updates = existing_event.get("updates", 1)
             processed_reports = {old_updates}
-        
+
         # 检查当前报数是否已处理过
         if current_report not in processed_reports:
             logger.info(
@@ -413,22 +420,28 @@ class EventDeduplicator:
         # 优先级: 震度速报 < 震源相关情报 < 震源・震度情报 < 各地震度相关情报
         # 对应的 issue type: ScalePrompt < Destination < ScaleAndDestination < DetailScale
         jma_types = ["ScalePrompt", "Destination", "ScaleAndDestination", "DetailScale"]
-        
+
         # 获取当前的 issue type
         current_issue_type = ""
-        if hasattr(current_earthquake, "raw_data") and isinstance(current_earthquake.raw_data, dict):
-             current_issue_type = current_earthquake.raw_data.get("issue", {}).get("type", "")
-        
+        if hasattr(current_earthquake, "raw_data") and isinstance(
+            current_earthquake.raw_data, dict
+        ):
+            current_issue_type = current_earthquake.raw_data.get("issue", {}).get(
+                "type", ""
+            )
+
         # 获取已存在的 issue type
         existing_issue_type = existing_event.get("issue_type", "")
-        
+
         if current_issue_type in jma_types and existing_issue_type in jma_types:
             try:
                 curr_idx = jma_types.index(current_issue_type)
                 prev_idx = jma_types.index(existing_issue_type)
                 # 只有状态升级（索引变大）时才允许更新
                 if curr_idx > prev_idx:
-                    logger.info(f"[灾害预警] 允许JMA情报升级: {existing_issue_type} -> {current_issue_type}")
+                    logger.info(
+                        f"[灾害预警] 允许JMA情报升级: {existing_issue_type} -> {current_issue_type}"
+                    )
                     return True
             except ValueError:
                 pass
@@ -548,7 +561,7 @@ class MessagePushManager:
 
         # 目标会话
         self.target_sessions = self._parse_target_sessions()
-        
+
         # 初始化本地监控过滤器
         self.local_monitor = LocalIntensityFilter(config.get("local_monitoring", {}))
 
@@ -569,9 +582,16 @@ class MessagePushManager:
     def should_push_event(self, event: DisasterEvent) -> bool:
         """判断是否应该推送事件"""
         # 1. 时间检查（所有事件类型）- 这是最重要的过滤
-        event_time = self._get_event_time(event)
-        if event_time:
-            time_diff = (datetime.now() - event_time).total_seconds() / 3600  # 小时
+        # 获取带时区的事件时间
+        event_time_aware = self._get_event_time(event)
+
+        if event_time_aware:
+            # 使用UTC当前时间进行比较，确保时区无关性
+            current_time_utc = datetime.now(timezone.utc)
+            time_diff = (
+                current_time_utc - event_time_aware
+            ).total_seconds() / 3600  # 小时
+
             if time_diff > 1:
                 logger.info(f"[灾害预警] 事件时间过早（{time_diff:.1f}小时前），过滤")
                 return False
@@ -611,25 +631,66 @@ class MessagePushManager:
         is_allowed, distance, intensity = self.local_monitor.check_event(earthquake)
         if not is_allowed:
             return False
-            
+
         # 保存计算结果供消息构建使用
         event.raw_data["local_estimation"] = {
             "distance": distance,
             "intensity": intensity,
-            "place_name": self.local_monitor.place_name
+            "place_name": self.local_monitor.place_name,
         }
 
         return True
 
     def _get_event_time(self, event: DisasterEvent) -> datetime | None:
-        """获取灾害事件的时间"""
+        """获取灾害事件的带时区时间 (Aware Datetime)"""
+        raw_time = None
         if isinstance(event.data, EarthquakeData):
-            return event.data.shock_time
+            raw_time = event.data.shock_time
         elif isinstance(event.data, TsunamiData):
-            return event.data.issue_time
+            raw_time = event.data.issue_time
         elif isinstance(event.data, WeatherAlarmData):
-            return event.data.effective_time or event.data.issue_time
-        return None
+            raw_time = event.data.effective_time or event.data.issue_time
+
+        if not raw_time:
+            return None
+
+        # 如果已经是Aware时间，直接返回
+        if raw_time.tzinfo is not None:
+            return raw_time
+
+        # 根据数据源ID确定时区
+        source_id = event.source_id or self._get_source_id(event)
+
+        # 定义时区
+        # JST (UTC+9)
+        tz_jst = timezone(timedelta(hours=9))
+        # CST (UTC+8)
+        tz_cst = timezone(timedelta(hours=8))
+        # UTC
+        tz_utc = timezone.utc
+
+        # 1. UTC+9 数据源
+        # - Fan Studio JMA
+        # - P2P Quake (所有)
+        # - Wolfx JMA
+        if (
+            "jma" in source_id
+            or "p2p" in source_id
+            or source_id == "wolfx_jma_eew"
+            or source_id == "wolfx_jma_eq"
+        ):
+            return raw_time.replace(tzinfo=tz_jst)
+
+        # 2. UTC 数据源
+        # - Global Quake
+        if "global_quake" in source_id:
+            return raw_time.replace(tzinfo=tz_utc)
+
+        # 3. UTC+8 数据源 (默认)
+        # - Fan Studio (除了 JMA, USGS已转为UTC+8)
+        # - Wolfx (除了 JMA)
+        # - China Weather/Tsunami
+        return raw_time.replace(tzinfo=tz_cst)
 
     def _get_source_id(self, event: DisasterEvent) -> str:
         """获取事件的数据源ID"""
@@ -748,7 +809,7 @@ class MessagePushManager:
                     # 使用零宽空格保护换行，URL编码确保特殊字符处理
                     zero_width_space = "\u200b"
                     encoded_map_url = urllib.parse.quote(map_url, safe=":/?&=+")
-                    
+
                     # 直接合并到消息文本中
                     message_text += f"{zero_width_space}\n🗺️地图链接:{zero_width_space} {encoded_map_url}"
 
