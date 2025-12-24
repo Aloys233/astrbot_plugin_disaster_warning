@@ -6,7 +6,6 @@
 import json
 import time
 import traceback
-from collections import deque
 from datetime import datetime
 from typing import Any
 
@@ -14,12 +13,7 @@ from astrbot.api import logger
 
 from ...models.data_source_config import get_data_source_config
 from ...models.models import (
-    DataSource,
     DisasterEvent,
-    DisasterType,
-    EarthquakeData,
-    TsunamiData,
-    WeatherAlarmData,
 )
 
 
