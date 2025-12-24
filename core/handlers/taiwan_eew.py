@@ -8,13 +8,13 @@ from typing import Any
 
 from astrbot.api import logger
 
-from .base import BaseDataHandler, _safe_float_convert
 from ...models.models import (
     DataSource,
     DisasterEvent,
     DisasterType,
     EarthquakeData,
 )
+from .base import BaseDataHandler, _safe_float_convert
 
 
 class CWAEEWHandler(BaseDataHandler):
@@ -41,7 +41,12 @@ class CWAEEWHandler(BaseDataHandler):
                 logger.debug(f"[灾害预警] {self.source_id} 使用整个消息作为数据")
 
             # 检查是否为CWA地震预警数据
-            if "maxIntensity" not in msg_data or "createTime" not in msg_data:
+            # 兼容新旧字段：maxIntensity -> epiIntensity
+            intensity = msg_data.get("maxIntensity")
+            if intensity is None:
+                intensity = msg_data.get("epiIntensity")
+
+            if intensity is None or "createTime" not in msg_data:
                 logger.debug(f"[灾害预警] {self.source_id} 非CWA地震预警数据，跳过")
                 return None
 
@@ -56,7 +61,7 @@ class CWAEEWHandler(BaseDataHandler):
                 longitude=float(msg_data.get("longitude", 0)),
                 depth=msg_data.get("depth"),
                 magnitude=msg_data.get("magnitude"),
-                scale=_safe_float_convert(msg_data.get("maxIntensity")),
+                scale=_safe_float_convert(intensity),
                 place_name=msg_data.get("placeName", ""),
                 updates=msg_data.get("updates", 1),
                 is_final=msg_data.get("isFinal", False),
