@@ -2,11 +2,13 @@
 WebSocket消息处理器注册中心
 负责创建和注册各种数据源的WebSocket消息处理器
 """
+
 import json
-from typing import Optional, Dict, Any
 
 from astrbot.api import logger
+
 from .websocket_manager import WebSocketManager
+
 
 class WebSocketHandlerRegistry:
     """WebSocket消息处理器注册中心"""
@@ -27,8 +29,10 @@ class WebSocketHandlerRegistry:
 
     def _create_fan_studio_handler(self):
         """创建 FAN Studio WebSocket 处理器"""
-        
-        async def fan_studio_handler(message, connection_name=None, connection_info=None):
+
+        async def fan_studio_handler(
+            message, connection_name=None, connection_info=None
+        ):
             # 利用connection_info增强日志记录
             if connection_info:
                 logger.debug(
@@ -215,12 +219,12 @@ class WebSocketHandlerRegistry:
                         f"[灾害预警] 连接信息 - URI: {connection_info.get('uri')}, 类型: {connection_info.get('connection_type')}"
                     )
                 raise
-        
+
         return fan_studio_handler
 
     def _create_p2p_handler(self):
         """创建 P2P Quake WebSocket 处理器"""
-        
+
         async def p2p_handler(message, connection_name=None, connection_info=None):
             # 利用connection_info增强日志记录
             if connection_info:
@@ -316,12 +320,12 @@ class WebSocketHandlerRegistry:
                         )
 
             logger.debug("[灾害预警] P2P处理器返回None，无有效事件")
-            
+
         return p2p_handler
 
     def _create_wolfx_handler(self):
         """创建 Wolfx WebSocket 处理器"""
-        
+
         async def wolfx_handler(message, connection_name=None, connection_info=None):
             # 利用connection_info增强日志记录
             if connection_info:
@@ -388,13 +392,15 @@ class WebSocketHandlerRegistry:
             else:
                 logger.warning("[灾害预警] Wolfx处理器未收到连接名称")
                 return
-        
+
         return wolfx_handler
 
     def _create_global_quake_handler(self):
         """创建 Global Quake WebSocket 处理器"""
-        
-        async def global_quake_handler(message, connection_name=None, connection_info=None):
+
+        async def global_quake_handler(
+            message, connection_name=None, connection_info=None
+        ):
             # 利用connection_info增强日志记录
             if connection_info:
                 logger.debug(
@@ -419,11 +425,17 @@ class WebSocketHandlerRegistry:
                             event.raw_data["connection_info"] = {
                                 "connection_name": connection_name,
                                 "uri": connection_info.get("uri"),
-                                "connection_type": connection_info.get("connection_type"),
-                                "established_time": connection_info.get("established_time"),
+                                "connection_type": connection_info.get(
+                                    "connection_type"
+                                ),
+                                "established_time": connection_info.get(
+                                    "established_time"
+                                ),
                             }
 
-                        logger.debug(f"[灾害预警] Global Quake处理器解析成功: {event.id}")
+                        logger.debug(
+                            f"[灾害预警] Global Quake处理器解析成功: {event.id}"
+                        )
                         await self.service._handle_disaster_event(event)
                 except Exception as e:
                     logger.error(

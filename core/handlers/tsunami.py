@@ -9,13 +9,12 @@ from typing import Any
 
 from astrbot.api import logger
 
-from .base import BaseDataHandler
 from ...models.models import (
     DataSource,
     DisasterEvent,
-    DisasterType,
     TsunamiData,
 )
+from .base import BaseDataHandler
 
 
 class TsunamiHandler(BaseDataHandler):
@@ -80,7 +79,9 @@ class TsunamiHandler(BaseDataHandler):
             if not title:
                 # 只有在非心跳包情况下才记录警告，且避免重复警告
                 if not self._is_heartbeat_message(msg_data):
-                    warning_msg = f"[灾害预警] {self.source_id} 海啸预警缺少标题信息，跳过处理"
+                    warning_msg = (
+                        f"[灾害预警] {self.source_id} 海啸预警缺少标题信息，跳过处理"
+                    )
                     if self._should_log_warning("missing_tsunami_title", warning_msg):
                         logger.debug(warning_msg)
                 return None
@@ -92,7 +93,9 @@ class TsunamiHandler(BaseDataHandler):
                 title=title,
                 level=level,
                 subtitle=tsunami_data.get("warningInfo", {}).get("caption", ""),
-                org_unit=tsunami_data.get("publishInfo", {}).get("unitName", "中国自然资源部海啸预警中心"),
+                org_unit=tsunami_data.get("publishInfo", {}).get(
+                    "unitName", "中国自然资源部海啸预警中心"
+                ),
                 issue_time=issue_time,
                 monitoring_stations=tsunami_data.get("monitoringStations", []),
                 estimated_arrival_time=tsunami_data.get("estimatedArrivalTime"),

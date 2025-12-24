@@ -3,18 +3,17 @@
 包含 CEA (中国地震预警网) 相关处理器
 """
 
-import re
 from typing import Any
 
 from astrbot.api import logger
 
-from .base import BaseDataHandler, _safe_float_convert
 from ...models.models import (
     DataSource,
     DisasterEvent,
     DisasterType,
     EarthquakeData,
 )
+from .base import BaseDataHandler
 
 
 class CEAEEWHandler(BaseDataHandler):

@@ -6,14 +6,14 @@
 """
 
 from .base import BaseDataHandler, _safe_float_convert
-from .china_eew import CEAEEWHandler, CEAEEWWolfxHandler
 from .china_earthquake import CENCEarthquakeHandler, CENCEarthquakeWolfxHandler
-from .taiwan_eew import CWAEEWHandler, CWAEEWWolfxHandler
-from .japan_eew import JMAEEWFanStudioHandler, JMAEEWP2PHandler, JMAEEWWolfxHandler
+from .china_eew import CEAEEWHandler, CEAEEWWolfxHandler
+from .global_sources import GlobalQuakeHandler, USGSEarthquakeHandler
 from .japan_earthquake import JMAEarthquakeP2PHandler, JMAEarthquakeWolfxHandler
-from .global_sources import USGSEarthquakeHandler, GlobalQuakeHandler
+from .japan_eew import JMAEEWFanStudioHandler, JMAEEWP2PHandler, JMAEEWWolfxHandler
+from .taiwan_eew import CWAEEWHandler, CWAEEWWolfxHandler
+from .tsunami import JMATsunamiP2PHandler, TsunamiHandler
 from .weather import WeatherAlarmHandler
-from .tsunami import TsunamiHandler, JMATsunamiP2PHandler
 
 # Handler 注册表 - 映射 source_id 到对应的 Handler 类
 DATA_HANDLERS = {

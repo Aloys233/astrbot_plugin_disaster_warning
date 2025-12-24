@@ -7,14 +7,14 @@ from ...models.models import EarthquakeData, TsunamiData, WeatherAlarmData
 from .base import BaseMessageFormatter
 from .earthquake import (
     CEAEEWFormatter,
-    CWAEEWFormatter,
-    JMAEEWFormatter,
     CENCEarthquakeFormatter,
-    JMAEarthquakeFormatter,
-    USGSEarthquakeFormatter,
+    CWAEEWFormatter,
     GlobalQuakeFormatter,
+    JMAEarthquakeFormatter,
+    JMAEEWFormatter,
+    USGSEarthquakeFormatter,
 )
-from .tsunami import TsunamiFormatter, JMATsunamiFormatter
+from .tsunami import JMATsunamiFormatter, TsunamiFormatter
 from .weather import WeatherFormatter
 
 # 格式化器映射

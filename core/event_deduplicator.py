@@ -2,11 +2,13 @@
 事件去重器
 允许多数据源推送同一事件，但防止同一数据源重复推送
 """
+
 from datetime import datetime, timedelta
-from typing import Any
 
 from astrbot.api import logger
+
 from ..models.models import DataSource, DisasterEvent, EarthquakeData
+
 
 class EventDeduplicator:
     """事件去重器 - 允许多数据源推送同一事件"""
@@ -125,7 +127,7 @@ class EventDeduplicator:
             }
         }
 
-        logger.info(f"[灾害预警] 允许推送新事件: {event.source.value}")
+        logger.info(f"[灾害预警] 事件通过基础去重检查: {event.source.value}")
         return True
 
     def _generate_event_fingerprint(self, earthquake: EarthquakeData) -> str:

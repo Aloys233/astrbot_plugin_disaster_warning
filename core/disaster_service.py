@@ -19,10 +19,10 @@ from ..models.models import (
     TsunamiData,
     WeatherAlarmData,
 )
+from .handler_registry import WebSocketHandlerRegistry
 from .handlers import DATA_HANDLERS
 from .message_logger import MessageLogger
 from .message_manager import MessagePushManager
-from .handler_registry import WebSocketHandlerRegistry
 from .websocket_manager import HTTPDataFetcher, WebSocketManager
 
 

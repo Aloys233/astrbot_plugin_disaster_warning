@@ -9,7 +9,6 @@ from typing import Any
 
 from astrbot.api import logger
 
-from .base import BaseDataHandler
 from ...models.models import (
     DataSource,
     DisasterEvent,
@@ -17,6 +16,7 @@ from ...models.models import (
     EarthquakeData,
 )
 from ...utils.fe_regions import translate_place_name
+from .base import BaseDataHandler
 
 
 class GlobalQuakeHandler(BaseDataHandler):
@@ -24,9 +24,18 @@ class GlobalQuakeHandler(BaseDataHandler):
 
     # 罗马数字到阿拉伯数字的映射
     ROMAN_TO_INT = {
-        "I": 1, "II": 2, "III": 3, "IV": 4, "V": 5,
-        "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10,
-        "XI": 11, "XII": 12
+        "I": 1,
+        "II": 2,
+        "III": 3,
+        "IV": 4,
+        "V": 5,
+        "VI": 6,
+        "VII": 7,
+        "VIII": 8,
+        "IX": 9,
+        "X": 10,
+        "XI": 11,
+        "XII": 12,
     }
 
     def __init__(self, message_logger=None):
@@ -47,9 +56,7 @@ class GlobalQuakeHandler(BaseDataHandler):
                 )
                 return self._parse_earthquake_data(data)
             else:
-                logger.debug(
-                    f"[灾害预警] {self.source_id} 忽略消息类型: {msg_type}"
-                )
+                logger.debug(f"[灾害预警] {self.source_id} 忽略消息类型: {msg_type}")
                 return None
 
         except json.JSONDecodeError as e:
@@ -114,6 +121,10 @@ class GlobalQuakeHandler(BaseDataHandler):
                 original_region, latitude, longitude, fallback_to_original=True
             )
 
+            # 获取最大加速度和测站信息
+            max_pga = eq_data.get("maxPGA")
+            station_count = eq_data.get("stationCount")
+
             # 创建地震数据对象
             earthquake = EarthquakeData(
                 id=eq_data.get("id", ""),
@@ -129,6 +140,8 @@ class GlobalQuakeHandler(BaseDataHandler):
                 place_name=place_name,
                 updates=eq_data.get("revisionId", 1),
                 raw_data=data,
+                max_pga=max_pga,
+                stations=station_count,
             )
 
             logger.info(

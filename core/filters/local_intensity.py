@@ -1,9 +1,12 @@
 """
 本地烈度过滤器
 """
+
 from astrbot.api import logger
+
 from ...models.models import EarthquakeData
 from ..intensity_calculator import IntensityCalculator
+
 
 class LocalIntensityFilter:
     """本地烈度过滤器"""

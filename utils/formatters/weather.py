@@ -2,8 +2,8 @@
 气象预警消息格式化器
 """
 
-from .base import BaseMessageFormatter
 from ...models.models import WeatherAlarmData
+from .base import BaseMessageFormatter
 
 
 class WeatherFormatter(BaseMessageFormatter):
