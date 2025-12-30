@@ -692,15 +692,13 @@ class DisasterWarningPlugin(Star):
             # 3. 检查本地监控 (Local Monitor)
             local_pass = True
             if manager.local_monitor and manager.local_monitor.enabled:
-                allowed, dist, inte = manager.local_monitor.check_event(earthquake)
-
-                # 为了模拟真实流程，手动注入 local_estimation
-                # 注意：需要写入 earthquake.raw_data，格式化器从这里读取
-                earthquake.raw_data["local_estimation"] = {
-                    "distance": dist,
-                    "intensity": inte,
-                    "place_name": manager.local_monitor.place_name,
-                }
+                # 使用统一的辅助方法注入 local_estimation
+                allowed = manager.local_monitor.inject_local_estimation(earthquake)
+                
+                # 从注入的数据中获取详细信息用于报告
+                local_est = earthquake.raw_data.get("local_estimation", {})
+                dist = local_est.get("distance", 0.0)
+                inte = local_est.get("intensity", 0.0)
 
                 if allowed:
                     report_lines.append("✅ 本地监控: 触发")

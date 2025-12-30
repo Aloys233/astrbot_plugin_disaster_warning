@@ -50,3 +50,24 @@ class LocalIntensityFilter:
                 return False, distance, intensity
 
         return True, distance, intensity
+
+    def inject_local_estimation(self, earthquake: EarthquakeData) -> bool:
+        """
+        检查事件并将本地预估信息注入到 earthquake.raw_data 中
+        
+        :param earthquake: 地震数据对象
+        :return: 是否允许推送（严格模式下可能为 False）
+        """
+        if not self.enabled:
+            return True
+        
+        is_allowed, distance, intensity = self.check_event(earthquake)
+        
+        # 将计算结果写入 earthquake.raw_data，供格式化器使用
+        earthquake.raw_data["local_estimation"] = {
+            "distance": distance,
+            "intensity": intensity,
+            "place_name": self.place_name,
+        }
+        
+        return is_allowed

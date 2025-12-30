@@ -678,21 +678,9 @@ class DisasterWarningService:
                 f"[灾害预警] 创建测试事件: {test_event.id} (类型: {disaster_type}, 配置: {test_config['source_id']})"
             )
 
-            # 注入本地预估信息（模拟真实推送流程）
-            if (
-                disaster_type == "earthquake"
-                and self.message_manager.local_monitor.enabled
-            ):
-                earthquake = test_event.data
-                _, distance, intensity = self.message_manager.local_monitor.check_event(
-                    earthquake
-                )
-                # 注意：需要写入 earthquake.raw_data，格式化器从这里读取
-                earthquake.raw_data["local_estimation"] = {
-                    "distance": distance,
-                    "intensity": intensity,
-                    "place_name": self.message_manager.local_monitor.place_name,
-                }
+            # 注入本地预估信息（使用统一的辅助方法）
+            if disaster_type == "earthquake":
+                self.message_manager.local_monitor.inject_local_estimation(test_event.data)
 
             # 直接构建消息并推送（绕过复杂的过滤逻辑，仅测试消息链路）
             message = self.message_manager._build_message(test_event)

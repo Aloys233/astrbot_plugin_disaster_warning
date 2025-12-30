@@ -185,20 +185,9 @@ class MessagePushManager:
             logger.info(f"[灾害预警] 事件被报数控制器过滤: {source_id}")
             return False
 
-        # 本地烈度过滤
-        is_allowed, distance, intensity = self.local_monitor.check_event(earthquake)
-        if not is_allowed:
+        # 本地烈度过滤与注入（使用统一的辅助方法）
+        if not self.local_monitor.inject_local_estimation(earthquake):
             return False
-
-        # 保存计算结果供消息构建使用（仅在启用本地监控时）
-        # 注意：需要写入 earthquake.raw_data (即 event.data.raw_data)，
-        # 而不是 event.raw_data，因为格式化器从 earthquake.raw_data 读取
-        if self.local_monitor.enabled:
-            earthquake.raw_data["local_estimation"] = {
-                "distance": distance,
-                "intensity": intensity,
-                "place_name": self.local_monitor.place_name,
-            }
 
         return True
 
