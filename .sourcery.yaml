@@ -1,7 +1,0 @@
-# 强制 AI 使用中文进行交流
-github:
-  pr_summary:
-    language: "zh-CN"  # 关键指令：告诉它用简体中文写总结
-  
-  review:
-    language: "zh-CN"  # 关键指令：告诉它用简体中文写代码审查意见
