@@ -383,6 +383,24 @@
         "type": "int",
         "hint": "单位：秒，不要设置超过600的数值，否则可能被服务器断开连接",
         "default": 120
+      },
+      "fallback_retry_enabled": {
+        "description": "启用兜底重试机制",
+        "type": "bool",
+        "hint": "当短时重连失败后，系统将在设定间隔后自动尝试重新连接",
+        "default": true
+      },
+      "fallback_retry_interval": {
+        "description": "兜底重试间隔",
+        "type": "int",
+        "hint": "单位：秒，默认1800秒（30分钟）。建议设置在600-3600之间",
+        "default": 1800
+      },
+      "fallback_retry_max_count": {
+        "description": "兜底重试最大次数",
+        "type": "int",
+        "hint": "-1表示无限重试，0表示禁用，正数表示最大重试次数",
+        "default": -1
       }
     }
   },

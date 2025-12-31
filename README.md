@@ -625,12 +625,21 @@ graph TD
 ```json
 {
   "websocket_config": {
-    "reconnect_interval": 10,      // 重连间隔（秒）
+    "reconnect_interval": 10,      // 短时重连间隔（秒）
+    "max_reconnect_retries": 3,    // 短时最大重连次数
     "connection_timeout": 15,      // 连接超时（秒）
-    "heartbeat_interval": 120      // 心跳间隔（秒）
+    "heartbeat_interval": 120,     // 心跳间隔（秒）
+    "fallback_retry_enabled": true,    // 启用兜底重试机制
+    "fallback_retry_interval": 1800,   // 兜底重试间隔（秒），默认30分钟
+    "fallback_retry_max_count": -1     // 兜底重试最大次数，-1表示无限重试
   }
 }
 ```
+
+**双层重试机制说明**：
+
+1. **短时重连**：当连接断开后，系统会以 `reconnect_interval` 秒的间隔快速重试，最多重试 `max_reconnect_retries` 次。
+2. **兜底重试**：如果短时重连失败，系统会等待 `fallback_retry_interval` 秒（默认30分钟）后重新开始短时重连流程。兜底重试可以无限进行（`fallback_retry_max_count = -1`），确保服务最终能够恢复。
 
 ### FAN Studio 备用服务器配置
 

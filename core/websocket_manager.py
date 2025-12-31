@@ -32,6 +32,7 @@ class WebSocketManager:
         self.message_handlers: dict[str, Callable] = {}
         self.reconnect_tasks: dict[str, asyncio.Task] = {}
         self.connection_retry_counts: dict[str, int] = {}
+        self.fallback_retry_counts: dict[str, int] = {}  # 兜底重试计数
         self.connection_info: dict[str, dict] = {}  # 新增：存储连接信息
         self.running = False
 
@@ -92,8 +93,9 @@ class WebSocketManager:
                     asyncio.get_event_loop().time()
                 )
                 logger.info(f"[灾害预警] WebSocket连接成功: {name}")
-                # 连接成功，重置重试计数
+                # 连接成功，重置所有重试计数
                 self.connection_retry_counts[name] = 0
+                self.fallback_retry_counts[name] = 0
 
                 try:
                     # 处理消息
@@ -263,9 +265,15 @@ class WebSocketManager:
             # 获取重连配置
             max_retries = self.config.get("max_reconnect_retries", 3)
             reconnect_interval = self.config.get("reconnect_interval", 10)
+            
+            # 获取兜底重试配置
+            fallback_enabled = self.config.get("fallback_retry_enabled", True)
+            fallback_interval = self.config.get("fallback_retry_interval", 1800)  # 默认30分钟
+            fallback_max_count = self.config.get("fallback_retry_max_count", -1)  # -1表示无限重试
 
             # 获取当前重试次数
             current_retry = self.connection_retry_counts.get(name, 0)
+            current_fallback = self.fallback_retry_counts.get(name, 0)
 
             # 检查是否已达到最大重试次数
             # 如果配置了备用服务器，总次数为主备各 max_retries 次
@@ -274,9 +282,47 @@ class WebSocketManager:
             total_max_retries = max_retries * 2 if has_backup else max_retries
 
             if current_retry >= total_max_retries:
-                logger.error(
-                    f"[灾害预警] {name} 重连失败，已达到最大重试次数 ({total_max_retries})，停止重连"
+                # 短时重连次数用尽，检查是否启用兜底重试
+                if not fallback_enabled:
+                    logger.error(
+                        f"[灾害预警] {name} 重连失败，已达到最大重试次数 ({total_max_retries})，停止重连"
+                    )
+                    return
+                
+                # 检查兜底重试次数是否达到上限
+                if fallback_max_count != -1 and current_fallback >= fallback_max_count:
+                    logger.error(
+                        f"[灾害预警] {name} 兜底重试失败，已达到最大兜底重试次数 ({fallback_max_count})，停止重连"
+                    )
+                    return
+                
+                # 进入兜底重试阶段
+                self.fallback_retry_counts[name] = current_fallback + 1
+                fallback_display = current_fallback + 1
+                fallback_max_display = "无限" if fallback_max_count == -1 else str(fallback_max_count)
+                fallback_interval_min = fallback_interval // 60
+                
+                logger.warning(
+                    f"[灾害预警] {name} 短时重连失败，将在 {fallback_interval_min} 分钟后进行兜底重试 "
+                    f"({fallback_display}/{fallback_max_display})"
                 )
+                
+                try:
+                    await asyncio.sleep(fallback_interval)
+                    # 重置短时重连计数器，重新开始短时重连流程
+                    self.connection_retry_counts[name] = 0
+                    logger.info(f"[灾害预警] {name} 开始兜底重试，重置短时重连计数器")
+                    await self.connect(
+                        name,
+                        uri,
+                        headers,
+                        is_retry=True,
+                        connection_info=connection_info,
+                    )
+                except asyncio.CancelledError:
+                    logger.info(f"[灾害预警] {name} 兜底重试任务被取消")
+                except Exception as e:
+                    logger.error(f"[灾害预警] {name} 兜底重试失败: {e}")
                 return
 
             # 确定目标服务器 URI
@@ -401,6 +447,7 @@ class WebSocketManager:
         self.connections.clear()
         self.connection_info.clear()
         self.connection_retry_counts.clear()
+        self.fallback_retry_counts.clear()
 
         logger.info("[灾害预警] WebSocket管理器已停止")
 
