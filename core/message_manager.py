@@ -120,7 +120,11 @@ class MessagePushManager:
         self.local_monitor = LocalIntensityFilter(config.get("local_monitoring", {}))
 
         # 初始化气象预警省份过滤器
-        weather_province_config = config.get("data_sources", {}).get("fan_studio", {}).get("weather_province_filter", {})
+        weather_province_config = (
+            config.get("data_sources", {})
+            .get("fan_studio", {})
+            .get("weather_province_filter", {})
+        )
         self.weather_province_filter = WeatherProvinceFilter(weather_province_config)
 
     def _parse_target_sessions(self) -> list[str]:

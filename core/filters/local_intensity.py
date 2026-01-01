@@ -12,6 +12,7 @@ from ..intensity_calculator import IntensityCalculator
 
 class LocalEstimationResult(TypedDict):
     """本地预估结果类型"""
+
     is_allowed: bool
     distance: float
     intensity: float
@@ -66,16 +67,16 @@ class LocalIntensityFilter:
     ) -> LocalEstimationResult | None:
         """
         检查事件并将本地预估信息注入到 earthquake.raw_data 中
-        
+
         :param earthquake: 地震数据对象
         :return: 包含 is_allowed, distance, intensity, place_name 的 TypedDict，
                  如果未启用则返回 None
         """
         if not self.enabled:
             return None
-        
+
         is_allowed, distance, intensity = self.check_event(earthquake)
-        
+
         # 构建本地预估结果
         result: LocalEstimationResult = {
             "is_allowed": is_allowed,
@@ -83,7 +84,7 @@ class LocalIntensityFilter:
             "intensity": intensity,
             "place_name": self.place_name,
         }
-        
+
         # 将计算结果写入 earthquake.raw_data，供格式化器使用
         # 注意：raw_data 中不包含 is_allowed，只存储用于显示的信息
         earthquake.raw_data["local_estimation"] = {
@@ -91,5 +92,5 @@ class LocalIntensityFilter:
             "intensity": intensity,
             "place_name": self.place_name,
         }
-        
+
         return result

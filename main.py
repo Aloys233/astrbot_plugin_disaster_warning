@@ -694,7 +694,7 @@ class DisasterWarningPlugin(Star):
             if manager.local_monitor:
                 # 使用统一的辅助方法，返回 None 表示未启用，返回 dict 表示启用
                 result = manager.local_monitor.inject_local_estimation(earthquake)
-                
+
                 if result is None:
                     # 未启用
                     report_lines.append("ℹ️ 本地监控: 未启用")
@@ -702,7 +702,7 @@ class DisasterWarningPlugin(Star):
                     allowed = result.get("is_allowed", True)
                     dist = result.get("distance")
                     inte = result.get("intensity")
-                    
+
                     if allowed:
                         report_lines.append("✅ 本地监控: 触发")
                     else:
@@ -712,7 +712,7 @@ class DisasterWarningPlugin(Star):
                     report_lines.append(
                         f"   ⦁ 严格模式: {'开启' if manager.local_monitor.strict_mode else '关闭 (仅计算不拦截)'}"
                     )
-                    
+
                     # 安全格式化，处理可能的 None 值
                     dist_str = f"{dist:.1f} km" if dist is not None else "未知"
                     inte_str = f"{inte:.1f}" if inte is not None else "未知"
