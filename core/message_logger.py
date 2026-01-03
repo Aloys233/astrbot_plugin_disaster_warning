@@ -73,6 +73,9 @@ class MessageLogger:
         # 确保日志目录存在
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
+        # 初始化时读取插件版本，避免每次写日志都进行文件IO
+        self.plugin_version = self._get_plugin_version()
+
         logger.info("[灾害预警] 消息记录器初始化完成")
         if self.filter_heartbeat:
             logger.info("[灾害预警] 消息过滤配置已启用:")
@@ -1048,7 +1051,7 @@ class MessageLogger:
                 "message_type": message_type,
                 "raw_data": raw_data,
                 "connection_info": connection_info or {},
-                "plugin_version": self._get_plugin_version(),
+                "plugin_version": self.plugin_version,
             }
 
             # 尝试可读性格式化
