@@ -83,7 +83,10 @@ class WebSocketHandlerRegistry:
                         messages_to_process.append((source, data))
 
                 # 3. 兜底：尝试特征识别 (兼容旧格式或无 source 的情况)
-                if not messages_to_process:
+                # 只有当消息中没有明确的 source 字段时才进行猜测
+                # 如果有 source 但不在 source_map 中（如 kma），说明是未知源，不应强行识别为其他源
+                source_id = data.get("source")
+                if not messages_to_process and not source_id:
                     # 提取核心数据用于特征识别
                     msg_data = data
                     depth = 0
