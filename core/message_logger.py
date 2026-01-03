@@ -50,6 +50,9 @@ class MessageLogger:
         self.filter_connection_status = config.get("debug_config", {}).get(
             "filter_connection_status", True
         )
+        self.http_earthquake_list_max_items = config.get("debug_config", {}).get(
+            "http_earthquake_list_max_items", 5
+        )
 
         # 用于去重的缓存
         self.recent_event_hashes: set[str] = set()
@@ -1145,7 +1148,7 @@ class MessageLogger:
         source: str,
         url: str,
         earthquake_list: dict[str, Any],
-        max_items: int = 5,
+        max_items: int | None = None,
     ):
         """
         记录 HTTP 地震列表响应的摘要（不记录完整列表，避免日志膨胀）
@@ -1154,10 +1157,14 @@ class MessageLogger:
             source: 数据源标识，如 "http_wolfx_cenc" 或 "http_wolfx_jma"
             url: 请求的 URL
             earthquake_list: 完整的地震列表响应数据
-            max_items: 只记录前多少条事件，默认 5 条
+            max_items: 只记录前多少条事件，默认为配置值
         """
         if not self.enabled:
             return
+
+        # 使用配置值作为默认值
+        if max_items is None:
+            max_items = self.http_earthquake_list_max_items
 
         try:
             # 构建摘要数据
