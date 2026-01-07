@@ -3,6 +3,8 @@
 实现优化的报数控制、拆分过滤器和改进的去重逻辑
 """
 
+import json
+import os
 import urllib.parse
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -11,6 +13,8 @@ from typing import Any
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
+from astrbot.api.star import StarTools
+from astrbot.core.utils.t2i.renderer import HtmlRenderer
 
 from ..models.data_source_config import (
     get_intensity_based_sources,
@@ -25,6 +29,7 @@ from ..models.models import (
 )
 from ..utils.formatters import (
     BaseMessageFormatter,
+    GlobalQuakeFormatter,
     format_earthquake_message,
     format_tsunami_message,
     format_weather_message,
@@ -37,7 +42,7 @@ from .filters import (
     ReportCountController,
     ScaleFilter,
     USGSFilter,
-    WeatherProvinceFilter,
+    WeatherFilter,
 )
 
 
@@ -87,7 +92,9 @@ class MessagePushManager:
         # 初始化报数控制器
         push_config = config.get("push_frequency_control", {})
         self.report_controller = ReportCountController(
-            push_every_n_reports=push_config.get("push_every_n_reports", 1),
+            cea_cwa_report_n=push_config.get("cea_cwa_report_n", 1),
+            jma_report_n=push_config.get("jma_report_n", 3),
+            gq_report_n=push_config.get("gq_report_n", 5),
             final_report_always_push=push_config.get("final_report_always_push", True),
             ignore_non_final_reports=push_config.get("ignore_non_final_reports", False),
         )
@@ -108,19 +115,26 @@ class MessagePushManager:
         # 事件推送记录
         self.event_push_records: dict[str, list[dict]] = defaultdict(list)
 
+        # 数据文件路径
+        self.data_dir = StarTools.get_data_dir("astrbot_plugin_disaster_warning")
+        self.stats_file = self.data_dir / "push_stats.json"
+
+        # 加载历史记录
+        self._load_stats()
+
         # 目标会话
         self.target_sessions = self._parse_target_sessions()
 
         # 初始化本地监控过滤器
         self.local_monitor = LocalIntensityFilter(config.get("local_monitoring", {}))
 
-        # 初始化气象预警省份过滤器
-        weather_province_config = (
+        # 初始化气象预警过滤器
+        weather_filter_config = (
             config.get("data_sources", {})
             .get("fan_studio", {})
-            .get("weather_province_filter", {})
+            .get("weather_filter", {})
         )
-        self.weather_province_filter = WeatherProvinceFilter(weather_province_config)
+        self.weather_filter = WeatherFilter(weather_filter_config)
 
     def _parse_target_sessions(self) -> list[str]:
         """解析目标会话 - 使用正确的配置键名"""
@@ -155,10 +169,10 @@ class MessagePushManager:
 
         # 2. 非地震事件检查
         if not isinstance(event.data, EarthquakeData):
-            # 气象预警事件需要进行省份过滤
+            # 气象预警事件需要进行过滤
             if isinstance(event.data, WeatherAlarmData):
                 headline = event.data.headline or event.data.title or ""
-                if self.weather_province_filter.should_filter(headline):
+                if self.weather_filter.should_filter(headline):
                     return False
             # 海啸和气象事件通过了过滤，可以推送
             return True
@@ -294,8 +308,8 @@ class MessagePushManager:
             return False
 
         try:
-            # 3. 构建消息
-            message = self._build_message(event)
+            # 3. 构建消息 (使用异步构建以支持卡片渲染)
+            message = await self._build_message_async(event)
             logger.debug("[灾害预警] 消息构建完成")
 
             # 4. 获取目标会话
@@ -326,20 +340,98 @@ class MessagePushManager:
             return False
 
     def _build_message(self, event: DisasterEvent) -> MessageChain:
-        """构建消息 - 使用格式化器并应用消息格式配置"""
+        """构建消息 - 使用格式化器并应用消息格式配置（向后兼容，仅调用同步逻辑）"""
         source_id = self._get_source_id(event)
-
-        # 获取消息格式配置
         message_format_config = self.config.get("message_format", {})
-        include_map = message_format_config.get("include_map", True)
-        map_provider = message_format_config.get("map_provider", "baidu")
-        map_zoom_level = message_format_config.get("map_zoom_level", 5)
-        detailed_jma = message_format_config.get("detailed_jma_intensity", False)
-
-        logger.debug(
-            f"[灾害预警] 消息配置: provider={map_provider}, zoom={map_zoom_level}, detailed_jma={detailed_jma}"
+        return self._build_message_sync(
+            event,
+            source_id,
+            message_format_config.get("include_map", True),
+            message_format_config.get("map_provider", "baidu"),
+            message_format_config.get("map_zoom_level", 5),
+            message_format_config.get("detailed_jma_intensity", False),
         )
 
+    async def _build_message_async(self, event: DisasterEvent) -> MessageChain:
+        """构建消息 (异步版本) - 支持卡片渲染"""
+        source_id = self._get_source_id(event)
+        message_format_config = self.config.get("message_format", {})
+        use_gq_card = message_format_config.get("use_global_quake_card", False)
+
+        if (
+            source_id == "global_quake"
+            and use_gq_card
+            and isinstance(event.data, EarthquakeData)
+        ):
+            try:
+                # 渲染 Global Quake 卡片
+                context = GlobalQuakeFormatter.get_render_context(event.data)
+
+                # 加载模板
+                # 直接通过当前文件位置计算 resources 目录位置
+                # core/message_manager.py -> ../resources/global_quake_card.html
+                current_file_dir = os.path.dirname(os.path.abspath(__file__))
+                resources_dir = os.path.join(
+                    os.path.dirname(current_file_dir), "resources"
+                )
+
+                template_path = os.path.join(resources_dir, "global_quake_card.html")
+                if os.path.exists(template_path):
+                    with open(template_path, encoding="utf-8") as f:
+                        template_content = f.read()
+
+                    # 渲染为图片
+                    renderer = HtmlRenderer()
+                    await renderer.initialize()
+
+                    # 使用 AstrBot 的 render_custom_template 接口
+                    # 注意：这通常需要 AstrBot 配置了网络渲染后端
+                    image_path = await renderer.render_custom_template(
+                        tmpl_str=template_content,
+                        tmpl_data=context,
+                        return_url=False,
+                        options={
+                            # 设置合适的视口宽度，高度给足防止截断
+                            "viewport": {"width": 540, "height": 800},
+                            "deviceScaleFactor": 2,
+                            # 关键：selector 参数告诉浏览器只截取 .quake-card 元素
+                            "selector": ".quake-card",
+                            "omitBackground": True,
+                        },
+                    )
+
+                    if image_path:
+                        logger.info(
+                            f"[灾害预警] Global Quake 卡片渲染成功: {image_path}"
+                        )
+                        chain = [Comp.Image.fromFileSystem(image_path)]
+                        return MessageChain(chain)
+                    else:
+                        logger.warning(
+                            "[灾害预警] Global Quake 卡片渲染返回空路径，回退到文本模式"
+                        )
+                else:
+                    logger.error(f"[灾害预警] 找不到模板文件: {template_path}")
+
+            except Exception as e:
+                logger.error(
+                    f"[灾害预警] Global Quake 卡片渲染失败: {e}，回退到文本模式"
+                )
+
+        # 默认回退到同步构建逻辑
+        return self._build_message_sync(
+            event,
+            source_id,
+            message_format_config.get("include_map", True),
+            message_format_config.get("map_provider", "baidu"),
+            message_format_config.get("map_zoom_level", 5),
+            message_format_config.get("detailed_jma_intensity", False),
+        )
+
+    def _build_message_sync(
+        self, event, source_id, include_map, map_provider, map_zoom_level, detailed_jma
+    ) -> MessageChain:
+        """同步构建消息逻辑（原 _build_message 内容）"""
         if isinstance(event.data, WeatherAlarmData):
             message_text = format_weather_message(source_id, event.data)
         elif isinstance(event.data, TsunamiData):
@@ -402,13 +494,16 @@ class MessagePushManager:
 
         # 记录推送信息
         push_info = {
-            "timestamp": datetime.now(),
+            "timestamp": datetime.now().isoformat(),  # 使用ISO格式以便序列化
             "event_id": event_id,
             "disaster_type": event.disaster_type.value,
             "source": self._get_source_id(event),
         }
 
         self.event_push_records[event_id].append(push_info)
+
+        # 保存统计数据 (每次推送都保存，保证数据安全)
+        self.save_stats()
 
     def _get_event_id(self, event: DisasterEvent) -> str:
         """获取事件ID"""
@@ -419,13 +514,43 @@ class MessagePushManager:
         return event.id
 
     def get_push_stats(self) -> dict[str, Any]:
-        """获取推送统计"""
+        """获取推送统计 - 包含细分统计"""
         total_events = len(self.event_push_records)
-        total_pushes = sum(len(records) for records in self.event_push_records.values())
+        total_pushes = 0
+
+        # 细分统计初始化
+        breakdown = {"earthquake": 0, "tsunami": 0, "weather": 0, "unknown": 0}
+
+        # 数据源统计
+        source_stats = defaultdict(int)
+
+        for records in self.event_push_records.values():
+            if not records:
+                continue
+
+            # 使用第一条记录的信息来确定类型（同一ID通常类型相同）
+            first_record = records[0]
+            dtype = first_record.get("disaster_type", "unknown")
+            source = first_record.get("source", "unknown")
+
+            # 统计推送总数
+            count = len(records)
+            total_pushes += count
+
+            # 更新分类统计
+            if dtype in breakdown:
+                breakdown[dtype] += count
+            else:
+                breakdown["unknown"] += count
+
+            # 更新数据源统计
+            source_stats[source] += count
 
         return {
             "total_events": total_events,
             "total_pushes": total_pushes,
+            "breakdown": breakdown,
+            "source_stats": dict(source_stats),
             "recent_events": self._get_recent_events(),
         }
 
@@ -435,40 +560,110 @@ class MessagePushManager:
         recent_events = []
 
         for event_id, records in self.event_push_records.items():
-            recent_records = [
-                record for record in records if record["timestamp"] > recent_time
-            ]
+            # 转换时间戳字符串为datetime对象进行比较
+            recent_records = []
+            for record in records:
+                try:
+                    ts = datetime.fromisoformat(record["timestamp"])
+                    if ts > recent_time:
+                        recent_records.append(record)
+                except (ValueError, TypeError):
+                    continue
 
             if recent_records:
+                # 获取最后推送时间
+                last_push_strs = [r["timestamp"] for r in recent_records]
+                last_push = max(last_push_strs)
+
                 recent_events.append(
                     {
                         "event_id": event_id,
                         "push_count": len(recent_records),
-                        "last_push": max(
-                            record["timestamp"] for record in recent_records
-                        ),
+                        "last_push": last_push,
                     }
                 )
 
         return sorted(recent_events, key=lambda x: x["last_push"], reverse=True)
+
+    def _save_stats(self):
+        """保存统计数据到文件"""
+        try:
+            self.save_stats()
+        except Exception as e:
+            logger.error(f"[灾害预警] 自动保存统计数据失败: {e}")
+
+    def save_stats(self):
+        """保存统计数据（公开方法）"""
+        try:
+            # 确保目录存在
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+
+            # 将 defaultdict 转换为普通 dict 保存
+            data_to_save = {
+                "records": dict(self.event_push_records),
+                "updated_at": datetime.now().isoformat(),
+            }
+
+            with open(self.stats_file, "w", encoding="utf-8") as f:
+                json.dump(data_to_save, f, ensure_ascii=False, indent=2)
+
+        except Exception as e:
+            logger.error(f"[灾害预警] 保存推送统计数据失败: {e}")
+
+    def _load_stats(self):
+        """加载统计数据"""
+        try:
+            if not self.stats_file.exists():
+                return
+
+            with open(self.stats_file, encoding="utf-8") as f:
+                data = json.load(f)
+
+            records = data.get("records", {})
+
+            # 恢复数据
+            for event_id, event_records in records.items():
+                self.event_push_records[event_id] = event_records
+
+            logger.info(
+                f"[灾害预警] 已加载 {len(self.event_push_records)} 条历史推送记录"
+            )
+
+        except Exception as e:
+            logger.error(f"[灾害预警] 加载推送统计数据失败: {e}")
+            # 出错时不覆盖现有数据，保持空状态或当前状态
 
     def cleanup_old_records(self, days: int = 7):
         """清理旧记录"""
         cutoff_time = datetime.now() - timedelta(days=days)
 
         # 清理事件推送记录
+        cleaned_count = 0
         for event_id in list(self.event_push_records.keys()):
             records = self.event_push_records[event_id]
-            recent_records = [
-                record for record in records if record["timestamp"] > cutoff_time
-            ]
 
-            if recent_records:
-                self.event_push_records[event_id] = recent_records
+            # 过滤保留最近的记录
+            new_records = []
+            for record in records:
+                try:
+                    ts = datetime.fromisoformat(record["timestamp"])
+                    if ts > cutoff_time:
+                        new_records.append(record)
+                except (ValueError, TypeError):
+                    continue
+
+            if new_records:
+                self.event_push_records[event_id] = new_records
             else:
                 del self.event_push_records[event_id]
+                cleaned_count += 1
 
         # 清理去重器
         self.deduplicator.cleanup_old_events()
 
-        logger.info(f"[灾害预警] 已清理 {days} 天前的推送记录")
+        # 保存清理后的结果
+        self.save_stats()
+
+        logger.info(
+            f"[灾害预警] 已清理 {days} 天前的推送记录，移除 {cleaned_count} 个过期事件"
+        )
