@@ -178,6 +178,7 @@ class DisasterWarningService:
 
         try:
             self.running = True
+            self.start_time = datetime.now()  # 记录启动时间
             logger.info("[灾害预警] 正在启动灾害预警服务...")
 
             # 启动WebSocket管理器
@@ -286,6 +287,8 @@ class DisasterWarningService:
             "wolfx_taiwan_cwa_eew": "cwa_wolfx",
             "wolfx_china_cenc_earthquake": "cenc_wolfx",
             "wolfx_japan_jma_earthquake": "jma_wolfx_info",
+            # Global Quake
+            "global_quake": "global_quake",
         }
 
         return connection_mapping.get(connection_name, "unknown")
@@ -396,8 +399,32 @@ class DisasterWarningService:
         task = asyncio.create_task(cleanup())
         self.scheduled_tasks.append(task)
 
+    def is_in_silence_period(self) -> bool:
+        """检查是否处于启动后的静默期"""
+        if not hasattr(self, "start_time"):
+            return False
+
+        debug_config = self.config.get("debug_config", {})
+        silence_duration = debug_config.get("startup_silence_duration", 0)
+
+        if silence_duration <= 0:
+            return False
+
+        elapsed = (datetime.now() - self.start_time).total_seconds()
+        return elapsed < silence_duration
+
     async def _handle_disaster_event(self, event: DisasterEvent):
         """处理灾害事件"""
+        # 检查静默期
+        if self.is_in_silence_period():
+            debug_config = self.config.get("debug_config", {})
+            silence_duration = debug_config.get("startup_silence_duration", 0)
+            elapsed = (datetime.now() - self.start_time).total_seconds()
+            logger.debug(
+                f"[灾害预警] 处于启动静默期 (剩余 {silence_duration - elapsed:.1f}s)，忽略事件: {event.id}"
+            )
+            return
+
         try:
             logger.debug(f"[灾害预警] 处理灾害事件: {event.id}")
             self._log_event(event)
@@ -468,7 +495,29 @@ class DisasterWarningService:
             "message_logger_enabled": self.message_logger.enabled
             if self.message_logger
             else False,
+            "uptime": self._get_uptime(),  # 添加运行时间
         }
+
+    def _get_uptime(self) -> str:
+        """获取服务运行时间"""
+        if not self.running or not hasattr(self, "start_time"):
+            return "未运行"
+
+        delta = datetime.now() - self.start_time
+        days = delta.days
+        hours, remainder = divmod(delta.seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        parts = []
+        if days > 0:
+            parts.append(f"{days}天")
+        if hours > 0:
+            parts.append(f"{hours}小时")
+        if minutes > 0:
+            parts.append(f"{minutes}分")
+        parts.append(f"{seconds}秒")
+
+        return "".join(parts)
 
     def _get_active_data_sources(self) -> list[str]:
         """获取活跃的数据源"""
