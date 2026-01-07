@@ -53,6 +53,12 @@ class MessageLogger:
         self.http_earthquake_list_max_items = config.get("debug_config", {}).get(
             "http_earthquake_list_max_items", 5
         )
+        self.startup_silence_duration = config.get("debug_config", {}).get(
+            "startup_silence_duration", 0
+        )
+
+        # 记录启动时间
+        self.start_time = datetime.now()
 
         # 用于去重的缓存
         self.recent_event_hashes: set[str] = set()
@@ -72,9 +78,13 @@ class MessageLogger:
         # 设置日志文件路径 - 使用AstrBot的StarTools获取正确的数据目录
         self.data_dir = StarTools.get_data_dir("astrbot_plugin_disaster_warning")
         self.log_file_path = self.data_dir / self.log_file_name
+        self.stats_file = self.data_dir / "logger_stats.json"
 
         # 确保日志目录存在
         self.data_dir.mkdir(parents=True, exist_ok=True)
+
+        # 加载统计数据
+        self._load_stats()
 
         # 初始化时读取插件版本，避免每次写日志都进行文件IO
         self.plugin_version = self._get_plugin_version()
@@ -626,15 +636,23 @@ class MessageLogger:
         key_mappings = {
             # 🌍 基础信息字段 (所有数据源通用)
             "id": "ID",
+            "ID": "ID",
             "_id": "数据库ID",
             "type": "消息类型",
             "title": "标题",
+            "key": "编号",
             "code": "消息代码",
             "source": "数据来源",
             "status": "状态",
+            "action": "操作",
+            "timestamp": "时间戳",
             "time": "发生时间",
             "createTime": "创建时间",
             "updateTime": "更新时间",
+            "created_at": "创建时间",
+            "updated_at": "更新时间",
+            "started_at": "开始时间",
+            "expire": "过期时间",
             # 🏔️ 地震核心信息
             "earthquake": "地震信息",
             "magnitude": "震级",
@@ -649,6 +667,8 @@ class MessageLogger:
             "name": "地点名称",
             "shockTime": "发震时间",
             "OriginTime": "发震时间",  # JMA格式
+            "place": "震中",
+            "region": "震中",  # Global Quake格式
             "hypocenter": "震源信息",
             "Hypocenter": "震源地名",  # JMA格式
             # 📍 震度/烈度信息
@@ -657,6 +677,7 @@ class MessageLogger:
             "maxIntensity": "最大烈度",  # Wolfx格式
             "epiIntensity": "预估烈度",  # FAN Studio格式
             "intensity": "烈度",
+            "shindo": "震度",  # JMA格式
             "scale": "震度值",  # P2P格式
             # 🌊 海啸相关信息
             "domesticTsunami": "日本境内海啸",
@@ -674,15 +695,22 @@ class MessageLogger:
             # ⏰ 时间相关
             "AnnouncedTime": "发布时间",  # JMA格式
             "ReportTime": "发报时间",  # Wolfx格式
+            "time_full": "发报时间(完整)",
+            "originTimeMs": "发震时间(MS)",
+            "originTimeIso": "发震时间(ISO)",
+            "lastUpdateMs": "最后更新(MS)",
             "effective": "生效时间",  # FAN Studio格式
             "issue_time": "发布时间",
             "arrivalTime": "到达时间",  # 海啸
             # 🎯 状态标志
             "isFinal": "最终报",
+            "final": "最终报",  # FAN Studio格式
             "isCancel": "取消报",
+            "cancel": "取消报",  # FAN Studio格式
             "is_final": "最终报",
             "is_cancel": "取消报",
             "cancelled": "取消标志",  # P2P格式
+            "fixedDepth": "固定深度",
             "is_training": "训练模式",
             "isTraining": "训练报",  # Wolfx格式
             "isSea": "海域地震",  # Wolfx格式
@@ -735,9 +763,34 @@ class MessageLogger:
             "CodeType": "发报说明",  # Wolfx格式
             "Title": "发报报头",  # Wolfx格式
             # 🔧 技术字段
+            "hop": "跳数(hop)",
+            "uid": "用户ID",
+            "ver": "版本号",
+            "user-agent": "客户端标识",
+            "count": "计数",
+            "area_confidences": "区域置信度",
             "autoFlag": "自动标志",  # FAN Studio格式
             "earthtype": "地震类型",  # FAN Studio格式
             "md5": "校验码",
+            "revisionId": "修订版本号",
+            "maxPGA": "最大地表加速度",
+            "cluster": "集群信息",
+            "level": "级别",
+            "quality": "质量指标",
+            "errOrigin": "时间误差",
+            "errDepth": "深度误差",
+            "errNS": "南北向误差",
+            "errEW": "东西向误差",
+            "pct": "置信度百分比",
+            "stations": "参与定位的台站数",
+            "stationCount": "台站统计",
+            "total": "总可用台站数",
+            "selected": "被选中参与计算的台站数",
+            "used": "实际用于定位的台站数",
+            "matching": "匹配度高的台站数",
+            "depthConfidence": "深度置信度",
+            "minDepth": "最小深度",
+            "maxDepth": "最大深度",
             # 🔌 连接信息 (保留原有)
             "connection_type": "连接类型",
             "server": "服务器",
@@ -771,15 +824,44 @@ class MessageLogger:
             elif key in ["magnitude", "Magnitude", "Magunitude"] and isinstance(
                 value, (int, float)
             ):
-                return f"M{value}"
+                return f"M{value:.2f}" if isinstance(value, float) else f"M{value}"
             elif key in ["depth", "Depth"] and isinstance(value, (int, float)):
-                return f"{value}km"
+                return f"{value:.2f}km" if isinstance(value, float) else f"{value}km"
+            elif key in [
+                "latitude",
+                "Latitude",
+                "longitude",
+                "Longitude",
+            ] and isinstance(value, (int, float)):
+                return f"{value:.5f}"
+            elif key in [
+                "maxPGA",
+                "errOrigin",
+                "errDepth",
+                "errNS",
+                "errEW",
+                "pct",
+                "minDepth",
+                "maxDepth",
+            ] and isinstance(value, float):
+                return f"{value:.3f}"
             elif key == "area" and isinstance(value, int):
                 # P2P地震感知信息的区域代码 - 使用真实的CSV数据
                 region_name = self.p2p_area_mapping.get(value, f"区域代码{value}")
                 return f"{value} ({region_name})"
+            elif key == "level" and isinstance(value, int):
+                level_map = {
+                    0: "0: 弱 (4+台站近距离触发)",
+                    1: "1: 中 (7+台站>64计数 或 4+台站>1,000计数)",
+                    2: "2: 强 (7+台站>1,000计数 或 3+台站>10,000计数)",
+                    3: "3: 极强 (5+台站>10,000计数 或 3+台站>50,000计数)",
+                    4: "4: 毁灭 (4+台站>50,000计数)",
+                }
+                return f"{value} ({level_map.get(value, '未知级别')})"
             else:
                 return str(value)
+        elif isinstance(value, bool):
+            return "是" if value else "否"
         elif isinstance(value, str):
             # 字符串长度控制
             if len(value) > 50:
@@ -1015,6 +1097,13 @@ class MessageLogger:
         connection_info: dict | None = None,
     ):
         """记录原始消息"""
+        # 检查启动静默期
+        if self.startup_silence_duration > 0:
+            elapsed = (datetime.now() - self.start_time).total_seconds()
+            if elapsed < self.startup_silence_duration:
+                # 静默期内不记录日志，也不更新统计
+                return
+
         if not self.enabled:
             # 仅在调试模式下输出，避免刷屏
             # logger.debug(f"[灾害预警] 消息记录器未启用，跳过记录: {source}")
@@ -1042,6 +1131,7 @@ class MessageLogger:
                     )
 
                 self.filter_stats["total_filtered"] += 1
+                self._save_stats_if_needed()  # 定期保存统计
                 return
 
             # 获取当前时间
@@ -1108,26 +1198,6 @@ class MessageLogger:
             else {"connection_type": "websocket"},
         )
 
-    def log_tcp_message(self, server: str, port: int, message: str):
-        """记录TCP消息"""
-        logger.info(
-            f"[灾害预警] 准备记录TCP消息 - 服务器: {server}:{port}, 消息: {message[:128]}..."
-        )
-
-        # 先检查过滤情况
-        filter_reason = self._should_filter_message(message)
-        if filter_reason:
-            logger.info(f"[灾害预警] TCP消息被过滤 - 原因: {filter_reason}")
-        else:
-            logger.debug("[灾害预警] TCP消息未被过滤，将记录到日志")
-
-        self.log_raw_message(
-            source="tcp_global_quake",
-            message_type="tcp_message",
-            raw_data=message,
-            connection_info={"server": server, "port": port, "connection_type": "tcp"},
-        )
-
     def log_http_response(
         self, url: str, response_data: Any, status_code: int | None = None
     ):
@@ -1181,9 +1251,7 @@ class MessageLogger:
             # 按照 No 键的数字排序
             if isinstance(earthquake_list, dict):
                 # 过滤出 No 开头的键
-                no_keys = [
-                    k for k in earthquake_list.keys() if k.startswith("No")
-                ]
+                no_keys = [k for k in earthquake_list.keys() if k.startswith("No")]
                 total_count = len(no_keys)
 
                 # 按数字排序（No1, No2, ...）
@@ -1195,28 +1263,17 @@ class MessageLogger:
                 for key in sorted_keys[:max_items]:
                     event = earthquake_list.get(key, {})
                     if isinstance(event, dict):
-                        # 只提取关键字段用于摘要
-                        compact_event = {
-                            "key": key,
-                            "magnitude": event.get("Magnitude")
-                            or event.get("magnitude"),
-                            "place": event.get("Hypocenter")
-                            or event.get("placeName")
-                            or event.get("location"),
-                            "time": event.get("OriginTime")
-                            or event.get("shockTime")
-                            or event.get("time"),
-                            "depth": event.get("Depth") or event.get("depth"),
-                        }
-                        sample_events.append(compact_event)
+                        # 记录完整字段，但只记录前几个条目以节省空间
+                        # 将 key 放在最前面方便识别（Python 3.7+ 字典保持插入顺序）
+                        event_data = {"key": key}
+                        event_data.update(event)
+                        sample_events.append(event_data)
 
             summary_data["total_events"] = total_count
             summary_data["sample_events"] = sample_events
 
             if total_count > max_items:
-                summary_data[
-                    "note"
-                ] = f"还有 {total_count - max_items} 条事件未显示"
+                summary_data["note"] = f"还有 {total_count - max_items} 条事件未显示"
 
             # 记录摘要
             self.log_raw_message(
@@ -1382,10 +1439,39 @@ class MessageLogger:
             for key in self.filter_stats:
                 self.filter_stats[key] = 0
 
+            self.save_stats()  # 保存重置后的统计
+
             logger.info("[灾害预警] 所有日志文件已清除，去重缓存已清空")
 
         except Exception as e:
             logger.error(f"[灾害预警] 清除日志失败: {e}")
+
+    def save_stats(self):
+        """保存统计数据到文件"""
+        try:
+            data = {
+                "filter_stats": self.filter_stats,
+                "updated_at": datetime.now().isoformat(),
+            }
+            with open(self.stats_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.error(f"[灾害预警] 保存日志统计数据失败: {e}")
+
+    def _load_stats(self):
+        """加载统计数据"""
+        try:
+            if self.stats_file.exists():
+                with open(self.stats_file, encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.filter_stats = data.get("filter_stats", self.filter_stats)
+        except Exception as e:
+            logger.error(f"[灾害预警] 加载日志统计数据失败: {e}")
+
+    def _save_stats_if_needed(self):
+        """按需保存统计（减少IO频率，例如每10次过滤保存一次）"""
+        if self.filter_stats["total_filtered"] % 10 == 0:
+            self.save_stats()
 
     def _get_plugin_version(self) -> str:
         """获取插件版本号"""
