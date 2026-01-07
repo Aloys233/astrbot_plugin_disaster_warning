@@ -443,7 +443,8 @@ AstrBot/
          │       ├─ __init__.py
          │       ├─ intensity_filter.py    # 烈度/震级/震度过滤器
          │       ├─ local_intensity.py     # 本地烈度过滤器
-         │       └─ report_controller.py   # 报数控制器
+         │       ├─ report_controller.py   # 报数控制器
+         │       └─weather_filter.py       # 气象预警过滤器
          ├─ models/                        # 数据模型目录
          │   ├─ __init__.py
          │   ├─ models.py                  # 数据模型定义（地震、海啸、气象等）
@@ -459,7 +460,8 @@ AstrBot/
          │       └─ weather.py             # 气象消息格式化器
          └─ resources/                     # 资源文件目录
              ├─ epsp-area.csv              # P2P地震区域代码映射表
-             └─ fe_regions_data.json       # FE全球地震区划映射表
+             ├─ fe_regions_data.json       # FE全球地震区划映射表
+             └─ global_quake_card.html     # Global Quake 消息卡片模板
 ```
 
 插件运行时会自动创建数据存储目录：
