@@ -1,11 +1,11 @@
 import asyncio
-import sys
+import json
+import os
 import traceback
 from datetime import datetime
 
 # [已移除] Windows平台WebSocket兼容性修复
 # 采用 aiohttp 替代 websockets 库，原生支持 Windows EventLoop，无需修改全局策略
-
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
@@ -80,43 +80,15 @@ class DisasterWarningPlugin(Star):
 
 📋 可用命令：
 • /灾害预警 - 显示此帮助信息
-• /灾害预警状态 - 查看服务运行状态
+• /灾害预警状态 - 查看服务运行状态和推送统计信息
 • /灾害预警测试 [群号] [灾害类型] [格式] - 测试推送功能
 • /灾害预警模拟 <纬度> <经度> <震级> [深度] [数据源] - 模拟地震事件
-• /灾害预警统计 - 查看推送统计信息
 • /灾害预警配置 查看 - 查看当前配置摘要
-• /灾害预警去重统计 - 查看事件去重统计
 • /灾害预警日志 - 查看原始消息日志统计
 • /灾害预警日志开关 - 开关原始消息日志记录
 • /灾害预警日志清除 - 清除所有原始消息日志
 
-🧪 测试功能说明：
-/灾害预警测试 [群号] [灾害类型] [格式]
-• 群号：可选，默认为当前群
-• 灾害类型：earthquake(地震)|tsunami(海啸)|weather(气象)
-• 格式：可选，不同数据源的消息格式
-  - 地震：china(中国格式)|japan(日本格式)|usgs(美国格式)
-  - 海啸：china(中国格式)|japan(日本格式)
-  - 气象：china(中国格式)
-
-📋 测试示例：
-• /灾害预警测试 - 在当前群测试中国地震格式
-• /灾害预警测试 earthquake japan - 测试日本地震格式
-• /灾害预警测试 123456 earthquake usgs - 在群123456测试美国地震格式
-• /灾害预警测试 tsunami japan - 测试日本海啸格式
-
-⚙️ 配置说明：
-插件支持通过WebUI进行配置，包括：
-• 数据源选择（地震、海啸、气象等）
-• 推送阈值设置（震级、烈度等）
-• 频率控制（报数控制）
-• 目标群号设置
-• 消息过滤（心跳包、P2P节点状态、重复事件等）
-
-🔧 注意事项：
-• 需要先在WebUI中配置目标群号
-• 插件会自动过滤低于设置阈值的地震信息
-• 原始消息日志记录默认关闭，如需调试请使用 /灾害预警日志开关 开启"""
+更多信息可参考 README 文档"""
 
         yield event.plain_result(help_text)
 
@@ -130,40 +102,102 @@ class DisasterWarningPlugin(Star):
         try:
             status = self.disaster_service.get_service_status()
 
-            status_text = f"""📊 灾害预警服务状态
+            # --- 基础状态 ---
+            running_state = "🟢 运行中" if status["running"] else "🔴 已停止"
+            uptime = status.get("uptime", "未知")
 
-🔄 运行状态：{"运行中" if status["running"] else "已停止"}
-🔗 活跃连接：{status["active_websocket_connections"]} 个
-📡 数据源：{len(status["data_sources"])} 个"""
+            status_text = [
+                "📊 灾害预警服务状态\n",
+                "\n",
+                f"🔄 运行状态：{running_state} (已运行 {uptime})\n",
+                f"🔗 活跃连接：{status['active_websocket_connections']} / {status['total_connections']}\n",
+            ]
 
-            # 推送统计
+            # --- 连接详情 ---
+            conn_details = status.get("connection_details", {})
+            if conn_details:
+                status_text.append("\n")
+                status_text.append("📡 连接详情：\n")
+                for name, detail in conn_details.items():
+                    state_icon = "🟢" if detail.get("connected") else "🔴"
+                    uri = detail.get("uri", "未知地址")
+                    # 简化URI显示
+                    if len(uri) > 30:
+                        uri = uri[:27] + "..."
+                    retry = detail.get("retry_count", 0)
+                    retry_text = f" (重试: {retry})" if retry > 0 else ""
+
+                    status_text.append(f"  {state_icon} `{name}`: {uri}{retry_text}\n")
+
+            # --- 活跃数据源 ---
+            active_sources = status.get("data_sources", [])
+            if active_sources:
+                status_text.append("\n")
+                status_text.append("📡 数据源详情：\n")
+
+                # 按照服务分组
+                service_groups = {}
+                for source in active_sources:
+                    parts = source.split(".", 1)
+                    service = parts[0]
+                    name = parts[1] if len(parts) > 1 else source
+                    if service not in service_groups:
+                        service_groups[service] = []
+                    service_groups[service].append(name)
+
+                # 映射服务名称为中文
+                service_names = {
+                    "fan_studio": "FAN Studio",
+                    "p2p_earthquake": "P2P地震情报",
+                    "wolfx": "Wolfx",
+                    "global_quake": "Global Quake",
+                }
+
+                # 格式化输出
+                for service, sources in service_groups.items():
+                    display_name = service_names.get(service, service)
+                    sources_str = ", ".join(sources)
+                    status_text.append(f"  • {display_name}: {sources_str}\n")
+
+            # --- 推送统计 ---
             push_stats = status.get("push_stats", {})
             if push_stats:
-                status_text += f"""
-📈 推送统计：
-  • 总事件数：{push_stats.get("total_events", 0)}
-  • 总推送数：{push_stats.get("total_pushes", 0)}
-  • 最终报数：{push_stats.get("final_reports_pushed", 0)}"""
+                total = push_stats.get("total_events", 0)
+                pushes = push_stats.get("total_pushes", 0)
+                breakdown = push_stats.get("breakdown", {})
 
-            # 过滤统计（如果启用）
+                status_text.append("\n")
+                status_text.append("📈 推送统计 (历史累计)：\n")
+                status_text.append(
+                    f"  • 记录到 {total} 个事件，进行了 {pushes} 次推送 / \n"
+                )
+
+                # 分类统计
+                if breakdown:
+                    eq = breakdown.get("earthquake", 0)
+                    ts = breakdown.get("tsunami", 0)
+                    we = breakdown.get("weather", 0)
+                    status_text.append(
+                        f"  • 分类：地震 {eq} 次 | 海啸 {ts} 次 | 气象 {we} 次\n"
+                    )
+
+            # --- 过滤统计 ---
             if self.disaster_service and self.disaster_service.message_logger:
                 filter_stats = self.disaster_service.message_logger.filter_stats
                 if filter_stats and filter_stats["total_filtered"] > 0:
-                    status_text += f"""
-🎯 消息过滤统计：
-  • 心跳包过滤：{filter_stats.get("heartbeat_filtered", 0)} 条
-  • P2P节点状态过滤：{filter_stats.get("p2p_areas_filtered", 0)} 条
-  • 重复事件过滤：{filter_stats.get("duplicate_events_filtered", 0)} 条
-  • 连接状态过滤：{filter_stats.get("connection_status_filtered", 0)} 条
-  • 总计过滤：{filter_stats.get("total_filtered", 0)} 条"""
+                    status_text.append("\n")
+                    status_text.append("🛡️ 过滤拦截：\n")
+                    status_text.append(
+                        f"  • 重复事件：{filter_stats.get('duplicate_events_filtered', 0)}\n"
+                    )
+                    status_text.append(
+                        f"  • 心跳/状态：{filter_stats.get('heartbeat_filtered', 0) + filter_stats.get('p2p_areas_filtered', 0) + filter_stats.get('connection_status_filtered', 0)}\n"
+                    )
+                    status_text.append(
+                        f"  • 总计过滤：{filter_stats.get('total_filtered', 0)}\n"
+                    )
 
-            # 最近事件
-            recent_events = push_stats.get("recent_events", [])
-            if recent_events:
-                status_text += f"""
-🕐 最近24小时事件 (插件启动后)：{len(recent_events)} 个"""
-
-            yield event.plain_result(status_text)
+            yield event.plain_result("".join(status_text))
 
         except Exception as e:
             logger.error(f"[灾害预警] 获取服务状态失败: {e}")
@@ -319,137 +353,6 @@ class DisasterWarningPlugin(Star):
             logger.error(f"[灾害预警] 测试推送失败: {e}")
             yield event.plain_result(f"❌ 测试推送失败: {str(e)}")
 
-    @filter.command("灾害预警统计")
-    async def disaster_stats(self, event: AstrMessageEvent):
-        """查看推送统计信息"""
-        if not self.disaster_service or not self.disaster_service.message_manager:
-            yield event.plain_result("❌ 统计信息不可用")
-            return
-
-        try:
-            stats = self.disaster_service.message_manager.get_push_stats()
-
-            stats_text = f"""📈 灾害预警推送统计
-
-📊 总体统计：
-  • 总事件数：{stats["total_events"]}
-  • 总推送数：{stats["total_pushes"]}
-  • 最终报数：{stats["final_reports_pushed"]}
-
-🕐 最近24小时 (插件启动后)：
-  • 事件数：{len(stats["recent_events"])}"""
-
-            # 显示最近的事件
-            if stats["recent_events"]:
-                stats_text += "\n\n📋 最近事件："
-                for i, event in enumerate(stats["recent_events"][:5]):
-                    stats_text += f"\n  {i + 1}. {event['event_id']} (推送{event['push_count']}次)"
-
-            yield event.plain_result(stats_text)
-
-        except Exception as e:
-            logger.error(f"[灾害预警] 获取统计信息失败: {e}")
-            yield event.plain_result(f"❌ 获取统计信息失败: {str(e)}")
-
-    @filter.command_group("灾害预警配置")
-    async def disaster_config(self, event: AstrMessageEvent):
-        """灾害预警配置管理"""
-        pass
-
-    @disaster_config.command("查看")
-    async def view_config(self, event: AstrMessageEvent):
-        """查看当前配置"""
-        try:
-            config_summary = self._get_config_summary()
-            yield event.plain_result(config_summary)
-        except Exception as e:
-            logger.error(f"[灾害预警] 获取配置摘要失败: {e}")
-            yield event.plain_result("❌ 获取配置摘要失败")
-
-    def _get_config_summary(self) -> str:
-        """获取配置摘要"""
-        summary = "⚙️ 灾害预警插件配置摘要\n\n"
-
-        # 基本状态
-        enabled = self.config.get("enabled", True)
-        summary += f"🔧 插件状态：{'启用' if enabled else '禁用'}\n"
-
-        # 目标群号 - 使用正确的配置键名
-        target_groups = self.config.get("target_groups", [])
-        if target_groups:
-            summary += f"📢 目标群号：{len(target_groups)} 个\n"
-            for group in target_groups[:5]:
-                summary += f"  • {group}\n"
-            if len(target_groups) > 5:
-                summary += f"  ...等{len(target_groups)}个群号\n"
-        else:
-            summary += "📢 目标群号：未配置（将不会进行推送）\n"
-
-        # 数据源 - 适配细粒度配置结构
-        data_sources = self.config.get("data_sources", {})
-        active_sources = []
-
-        # 遍历新的配置结构，收集启用的数据源
-        for service_name, service_config in data_sources.items():
-            if isinstance(service_config, dict) and service_config.get(
-                "enabled", False
-            ):
-                # 收集该服务下启用的具体数据源
-                for source_name, enabled in service_config.items():
-                    if (
-                        source_name != "enabled"
-                        and isinstance(enabled, bool)
-                        and enabled
-                    ):
-                        active_sources.append(f"{service_name}.{source_name}")
-
-        summary += f"\n📡 活跃数据源：{len(active_sources)} 个\n"
-        for source in active_sources[:5]:
-            summary += f"  • {self._format_source_name(source)}\n"
-        if len(active_sources) > 5:
-            summary += f"  ...等{len(active_sources)}个数据源\n"
-
-        # 阈值设置 - 使用新的配置结构
-        earthquake_filters = self.config.get("earthquake_filters", {})
-        if earthquake_filters:
-            summary += "\n📊 阈值设置：\n"
-
-            # 烈度过滤器
-            intensity_filter = earthquake_filters.get("intensity_filter", {})
-            if intensity_filter.get("enabled", True):
-                if "min_magnitude" in intensity_filter:
-                    summary += (
-                        f"  • 烈度过滤-最小震级：M{intensity_filter['min_magnitude']}\n"
-                    )
-                if "min_intensity" in intensity_filter:
-                    summary += (
-                        f"  • 烈度过滤-最小烈度：{intensity_filter['min_intensity']}\n"
-                    )
-
-            # 震度过滤器
-            scale_filter = earthquake_filters.get("scale_filter", {})
-            if scale_filter.get("enabled", True):
-                if "min_magnitude" in scale_filter:
-                    summary += (
-                        f"  • 震度过滤-最小震级：M{scale_filter['min_magnitude']}\n"
-                    )
-                if "min_scale" in scale_filter:
-                    summary += f"  • 震度过滤-最小震度：{scale_filter['min_scale']}\n"
-
-            # USGS过滤器
-            magnitude_only_filter = earthquake_filters.get("magnitude_only_filter", {})
-            if magnitude_only_filter.get("enabled", True):
-                if "min_magnitude" in magnitude_only_filter:
-                    summary += f"  • USGS过滤-最小震级：M{magnitude_only_filter['min_magnitude']}\n"
-
-        # 推送频率
-        freq_control = self.config.get("push_frequency_control", {})
-        if freq_control:
-            summary += f"\n⏱️ 推送频率：每{freq_control.get('push_every_n_reports', 3)}报推送一次\n"
-
-        summary += "\n💡 提示：详细配置请通过WebUI进行修改"
-        return summary
-
     @filter.command("灾害预警日志")
     async def disaster_logs(self, event: AstrMessageEvent):
         """查看原始消息日志信息"""
@@ -538,35 +441,61 @@ class DisasterWarningPlugin(Star):
             logger.error(f"[灾害预警] 清除日志失败: {e}")
             yield event.plain_result(f"❌ 清除日志失败: {str(e)}")
 
-    @filter.command("灾害预警去重统计")
-    async def deduplication_stats(self, event: AstrMessageEvent):
-        """查看事件去重统计信息"""
-        if not self.disaster_service or not self.disaster_service.message_manager:
-            yield event.plain_result("❌ 去重功能不可用")
+    @filter.command("灾害预警配置")
+    async def disaster_config(self, event: AstrMessageEvent, action: str = None):
+        """查看当前配置信息"""
+        if action != "查看":
+            yield event.plain_result("❓ 请使用格式：/灾害预警配置 查看")
             return
 
         try:
-            stats = self.disaster_service.message_manager.deduplicator.get_deduplication_stats()
+            # 加载 schema 文件以获取中文描述
+            schema_path = os.path.join(os.path.dirname(__file__), "_conf_schema.json")
+            if os.path.exists(schema_path):
+                with open(schema_path, encoding="utf-8") as f:
+                    schema = json.load(f)
+            else:
+                schema = {}
 
-            stats_text = f"""📊 事件去重统计
+            def _translate_recursive(config_item, schema_item):
+                """递归将配置键名转换为中文描述"""
+                if not isinstance(config_item, dict):
+                    return config_item
 
-⏱️ 时间窗口：{stats["time_window_minutes"]} 分钟
-📏 位置容差：{stats["location_tolerance_km"]} 公里
-📊 震级容差：{stats["magnitude_tolerance"]} 级
+                translated = {}
+                for key, value in config_item.items():
+                    # 获取当前键的 schema 定义
+                    item_schema = schema_item.get(key, {}) if schema_item else {}
 
-📈 当前记录：{stats["recent_events_count"]} 个事件
+                    # 获取中文描述，如果没有则使用原键名
+                    # 格式：中文描述
+                    description = item_schema.get("description", key)
 
-💡 说明：
-• 插件会允许多个数据源对同一地震事件进行推送
-• 时间窗口内（1分钟）的相似事件会被去重
-• 位置差异在20公里内视为同一事件
-• 震级差异在0.5级内视为同一事件"""
+                    # 处理嵌套结构
+                    if isinstance(value, dict):
+                        # 如果 schema 中有 items 定义（通常用于嵌套对象），则传入子 schema
+                        sub_schema = item_schema.get("items", {})
+                        translated[description] = _translate_recursive(
+                            value, sub_schema
+                        )
+                    else:
+                        translated[description] = value
 
-            yield event.plain_result(stats_text)
+                return translated
+
+            # 将配置转换为字典并进行翻译
+            config_data = dict(self.config)
+            translated_config = _translate_recursive(config_data, schema)
+
+            # 转换为格式化的 JSON 字符串
+            config_str = json.dumps(translated_config, indent=2, ensure_ascii=False)
+
+            # 构造返回消息
+            yield event.plain_result(f"🔧 当前配置详情：{config_str}")
 
         except Exception as e:
-            logger.error(f"[灾害预警] 获取去重统计失败: {e}")
-            yield event.plain_result(f"❌ 获取去重统计失败: {str(e)}")
+            logger.error(f"[灾害预警] 获取配置详情失败: {e}")
+            yield event.plain_result(f"❌ 获取配置详情失败: {str(e)}")
 
     def _format_source_name(self, source_key: str) -> str:
         """格式化数据源名称 - 细粒度配置结构"""
