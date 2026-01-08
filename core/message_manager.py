@@ -52,6 +52,8 @@ class MessagePushManager:
     def __init__(self, config: dict[str, Any], context):
         self.config = config
         self.context = context
+        # 初始化数据目录 (插件根目录)
+        self.data_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
         # 初始化过滤器 - 使用新的配置路径
         earthquake_filters = config.get("earthquake_filters", {})
@@ -356,12 +358,19 @@ class MessagePushManager:
                 # 渲染 Global Quake 卡片
                 context = GlobalQuakeFormatter.get_render_context(event.data)
 
-                # 加载模板
-                current_file_dir = os.path.dirname(os.path.abspath(__file__))
-                resources_dir = os.path.join(
-                    os.path.dirname(current_file_dir), "resources"
-                )
-                template_path = os.path.join(resources_dir, "global_quake_card.html")
+                
+                # 获取模板名称配置
+                template_name = message_format_config.get("global_quake_template", "Aurora")
+
+                # 加载模板 (使用 self.data_dir 即插件根目录)
+                resources_dir = os.path.join(self.data_dir, "resources")
+                
+                # 构建模板路径: resources/card_templates/{template_name}/global_quake.html
+                template_path = os.path.join(resources_dir, "card_templates", template_name, "global_quake.html")
+                
+                # 兼容旧逻辑：如果配置了 'default' 但 card_templates 下没有，或者为了防止路径错误，可以增加一些容错
+                # 但根据重构计划，我们优先相信 card_templates 下的结构
+
 
                 if not os.path.exists(template_path):
                     logger.error(f"[灾害预警] 找不到模板文件: {template_path}")
@@ -419,8 +428,11 @@ class MessagePushManager:
                     # 定位卡片元素
                     card = page.locator(selector)
                     
-                    # 准备临时文件路径
-                    temp_dir = os.path.join(self.data_dir, "temp")
+                    # 准备临时文件路径 (使用 AstrBot 数据目录的 temp)
+                    # self.data_dir = plugins/astrbot_plugin_disaster_warning
+                    # 上两级 = data/temp
+                    astrbot_data_dir = os.path.dirname(os.path.dirname(self.data_dir))
+                    temp_dir = os.path.join(astrbot_data_dir, "temp")
                     if not os.path.exists(temp_dir):
                         os.makedirs(temp_dir, exist_ok=True)
                     

@@ -393,41 +393,27 @@
         function drawEpicenter() {
             const center = projection([lng, lat]);
             if (center) {
-                // 震中点 (白色描边增强对比度)
-                svg.append("circle")
-                    .attr("cx", center[0])
-                    .attr("cy", center[1])
-                    .attr("r", 6)
-                    .attr("fill", "#f43f5e")
-                    .attr("stroke", "#ffffff")
-                    .attr("stroke-width", 3);
+                const size = 10; // 叉的大小
 
-                // 波纹
-                const ring = svg.append("circle")
-                    .attr("cx", center[0])
-                    .attr("cy", center[1])
-                    .attr("r", 6)
-                    .attr("fill", "none")
+                // 叉形震源标记 (X)
+                const crossGroup = svg.append("g")
+                    .attr("transform", `translate(${center[0]}, ${center[1]})`);
+
+                // 第一条线 (\)
+                crossGroup.append("line")
+                    .attr("x1", -size).attr("y1", -size)
+                    .attr("x2", size).attr("y2", size)
                     .attr("stroke", "#f43f5e")
-                    .attr("stroke-width", 2)
-                    .attr("opacity", 0.8);
+                    .attr("stroke-width", 4)
+                    .attr("stroke-linecap", "round");
 
-                // 动画兼容写法
-                const animR = document.createElementNS("http://www.w3.org/2000/svg", "animate");
-                animR.setAttribute("attributeName", "r");
-                animR.setAttribute("from", "6");
-                animR.setAttribute("to", "40");
-                animR.setAttribute("dur", "1.5s");
-                animR.setAttribute("repeatCount", "indefinite");
-                ring.node().appendChild(animR);
-
-                const animO = document.createElementNS("http://www.w3.org/2000/svg", "animate");
-                animO.setAttribute("attributeName", "opacity");
-                animO.setAttribute("from", "0.8");
-                animO.setAttribute("to", "0");
-                animO.setAttribute("dur", "1.5s");
-                animO.setAttribute("repeatCount", "indefinite");
-                ring.node().appendChild(animO);
+                // 第二条线 (/)
+                crossGroup.append("line")
+                    .attr("x1", size).attr("y1", -size)
+                    .attr("x2", -size).attr("y2", size)
+                    .attr("stroke", "#f43f5e")
+                    .attr("stroke-width", 4)
+                    .attr("stroke-linecap", "round");
             }
         }
 

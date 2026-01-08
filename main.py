@@ -695,3 +695,5 @@ class DisasterWarningPlugin(Star):
     async def on_astrbot_loaded(self):
         """AstrBot加载完成时的钩子"""
         logger.info("[灾害预警] AstrBot已加载完成，灾害预警插件准备就绪")
+
+ 

@@ -92,7 +92,13 @@
               "min_color_level": {
                 "description": "最低预警级别",
                 "type": "string",
-                "options": ["白色", "蓝色", "黄色", "橙色", "红色"],
+                "options": [
+                  "白色",
+                  "蓝色",
+                  "黄色",
+                  "橙色",
+                  "红色"
+                ],
                 "default": "白色",
                 "hint": "只推送等于或高于此级别的预警。级别排序：白色 < 蓝色 < 黄色 < 橙色 < 红色"
               }
@@ -397,6 +403,16 @@
         "type": "bool",
         "hint": "开启后，Global Quake 的地震预警将以图片卡片的形式推送（需要消耗少量系统资源进行渲染）",
         "default": false
+      },
+      "global_quake_template": {
+        "description": "Global Quake 卡片模板",
+        "type": "string",
+        "hint": "选择使用的卡片模板",
+        "default": "Aurora",
+        "options": [
+          "Aurora",
+          "DarkNight"
+        ]
       }
     }
   },
