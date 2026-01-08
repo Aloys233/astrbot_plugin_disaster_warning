@@ -3,17 +3,14 @@
 实现优化的报数控制、拆分过滤器和改进的去重逻辑
 """
 
-import json
 import os
 import urllib.parse
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
-from astrbot.api.star import StarTools
 from astrbot.core.utils.t2i.renderer import HtmlRenderer
 
 from ..models.data_source_config import (
@@ -111,16 +108,6 @@ class MessagePushManager:
                 "magnitude_tolerance", 0.5
             ),
         )
-
-        # 事件推送记录
-        self.event_push_records: dict[str, list[dict]] = defaultdict(list)
-
-        # 数据文件路径
-        self.data_dir = StarTools.get_data_dir("astrbot_plugin_disaster_warning")
-        self.stats_file = self.data_dir / "push_stats.json"
-
-        # 加载历史记录
-        self._load_stats()
 
         # 目标会话
         self.target_sessions = self._parse_target_sessions()
@@ -329,7 +316,6 @@ class MessagePushManager:
                     logger.error(f"[灾害预警] 推送到 {session} 失败: {e}")
 
             # 6. 记录推送
-            self._record_push(event)
             logger.info(
                 f"[灾害预警] 事件 {event.id} 推送完成，成功推送到 {push_success_count} 个会话"
             )
@@ -470,200 +456,11 @@ class MessagePushManager:
         chain = [Comp.Plain(message_text)]
         return MessageChain(chain)
 
-    def _generate_map_link(
-        self, latitude: float, longitude: float, provider: str, zoom: int
-    ) -> str:
-        """根据配置生成地图链接 - 已移至message_formatters模块"""
-        # 这个方法现在由message_formatters模块处理
-        return BaseMessageFormatter.get_map_link(
-            latitude,
-            longitude,
-            provider,
-            zoom,
-            magnitude=None,  # 这个方法没有震级信息，使用默认值
-            place_name=None,  # 这个方法没有位置信息，使用默认值
-        )
-
     async def _send_message(self, session: str, message: MessageChain):
         """发送消息到指定会话"""
         await self.context.send_message(session, message)
 
-    def _record_push(self, event: DisasterEvent):
-        """记录推送"""
-        event_id = self._get_event_id(event)
-
-        # 记录推送信息
-        push_info = {
-            "timestamp": datetime.now().isoformat(),  # 使用ISO格式以便序列化
-            "event_id": event_id,
-            "disaster_type": event.disaster_type.value,
-            "source": self._get_source_id(event),
-        }
-
-        self.event_push_records[event_id].append(push_info)
-
-        # 保存统计数据 (每次推送都保存，保证数据安全)
-        self.save_stats()
-
-    def _get_event_id(self, event: DisasterEvent) -> str:
-        """获取事件ID"""
-        if isinstance(event.data, EarthquakeData):
-            return event.data.event_id or event.data.id
-        elif isinstance(event.data, (TsunamiData, WeatherAlarmData)):
-            return event.data.id
-        return event.id
-
-    def get_push_stats(self) -> dict[str, Any]:
-        """获取推送统计 - 包含细分统计"""
-        total_events = len(self.event_push_records)
-        total_pushes = 0
-
-        # 细分统计初始化
-        breakdown = {"earthquake": 0, "tsunami": 0, "weather": 0, "unknown": 0}
-
-        # 数据源统计
-        source_stats = defaultdict(int)
-
-        for records in self.event_push_records.values():
-            if not records:
-                continue
-
-            # 使用第一条记录的信息来确定类型（同一ID通常类型相同）
-            first_record = records[0]
-            dtype = first_record.get("disaster_type", "unknown")
-            source = first_record.get("source", "unknown")
-
-            # 统计推送总数
-            count = len(records)
-            total_pushes += count
-
-            # 更新分类统计
-            if dtype in breakdown:
-                breakdown[dtype] += count
-            else:
-                breakdown["unknown"] += count
-
-            # 更新数据源统计
-            source_stats[source] += count
-
-        return {
-            "total_events": total_events,
-            "total_pushes": total_pushes,
-            "breakdown": breakdown,
-            "source_stats": dict(source_stats),
-            "recent_events": self._get_recent_events(),
-        }
-
-    def _get_recent_events(self, hours: int = 24) -> list[dict]:
-        """获取最近的事件"""
-        recent_time = datetime.now() - timedelta(hours=hours)
-        recent_events = []
-
-        for event_id, records in self.event_push_records.items():
-            # 转换时间戳字符串为datetime对象进行比较
-            recent_records = []
-            for record in records:
-                try:
-                    ts = datetime.fromisoformat(record["timestamp"])
-                    if ts > recent_time:
-                        recent_records.append(record)
-                except (ValueError, TypeError):
-                    continue
-
-            if recent_records:
-                # 获取最后推送时间
-                last_push_strs = [r["timestamp"] for r in recent_records]
-                last_push = max(last_push_strs)
-
-                recent_events.append(
-                    {
-                        "event_id": event_id,
-                        "push_count": len(recent_records),
-                        "last_push": last_push,
-                    }
-                )
-
-        return sorted(recent_events, key=lambda x: x["last_push"], reverse=True)
-
-    def _save_stats(self):
-        """保存统计数据到文件"""
-        try:
-            self.save_stats()
-        except Exception as e:
-            logger.error(f"[灾害预警] 自动保存统计数据失败: {e}")
-
-    def save_stats(self):
-        """保存统计数据（公开方法）"""
-        try:
-            # 确保目录存在
-            self.data_dir.mkdir(parents=True, exist_ok=True)
-
-            # 将 defaultdict 转换为普通 dict 保存
-            data_to_save = {
-                "records": dict(self.event_push_records),
-                "updated_at": datetime.now().isoformat(),
-            }
-
-            with open(self.stats_file, "w", encoding="utf-8") as f:
-                json.dump(data_to_save, f, ensure_ascii=False, indent=2)
-
-        except Exception as e:
-            logger.error(f"[灾害预警] 保存推送统计数据失败: {e}")
-
-    def _load_stats(self):
-        """加载统计数据"""
-        try:
-            if not self.stats_file.exists():
-                return
-
-            with open(self.stats_file, encoding="utf-8") as f:
-                data = json.load(f)
-
-            records = data.get("records", {})
-
-            # 恢复数据
-            for event_id, event_records in records.items():
-                self.event_push_records[event_id] = event_records
-
-            logger.info(
-                f"[灾害预警] 已加载 {len(self.event_push_records)} 条历史推送记录"
-            )
-
-        except Exception as e:
-            logger.error(f"[灾害预警] 加载推送统计数据失败: {e}")
-            # 出错时不覆盖现有数据，保持空状态或当前状态
-
-    def cleanup_old_records(self, days: int = 7):
+    def cleanup_old_records(self):
         """清理旧记录"""
-        cutoff_time = datetime.now() - timedelta(days=days)
-
-        # 清理事件推送记录
-        cleaned_count = 0
-        for event_id in list(self.event_push_records.keys()):
-            records = self.event_push_records[event_id]
-
-            # 过滤保留最近的记录
-            new_records = []
-            for record in records:
-                try:
-                    ts = datetime.fromisoformat(record["timestamp"])
-                    if ts > cutoff_time:
-                        new_records.append(record)
-                except (ValueError, TypeError):
-                    continue
-
-            if new_records:
-                self.event_push_records[event_id] = new_records
-            else:
-                del self.event_push_records[event_id]
-                cleaned_count += 1
-
         # 清理去重器
         self.deduplicator.cleanup_old_events()
-
-        # 保存清理后的结果
-        self.save_stats()
-
-        logger.info(
-            f"[灾害预警] 已清理 {days} 天前的推送记录，移除 {cleaned_count} 个过期事件"
-        )
