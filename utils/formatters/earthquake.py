@@ -3,11 +3,135 @@
 包含 CEA, CWA, JMA, CENC, USGS, GlobalQuake 等地震数据源的格式化逻辑
 """
 
+import re
 from datetime import datetime, timedelta, timezone
 
 from ...core.intensity_calculator import IntensityCalculator
 from ...models.models import EarthquakeData
 from .base import BaseMessageFormatter
+
+
+def _get_intensity_emoji(value, is_eew=True, is_shindo=False) -> str:
+    """
+    获取烈度/震度对应的emoji
+
+    Args:
+        value: 烈度/震度值 (int, float, str)
+        is_eew: 是否为预警 (True=圆形, False=方形)
+        is_shindo: 是否为震度 (True=震度, False=烈度)
+    """
+    if value is None:
+        return ""
+
+    circles = ["⚪", "🔵", "🟢", "🟡", "🟠", "🔴", "🟣"]
+    squares = ["⬜", "🟦", "🟩", "🟨", "🟧", "🟥", "🟪"]
+    emojis = circles if is_eew else squares
+
+    idx = 0
+    try:
+        val_str = str(value)
+        num_val = None
+
+        # 尝试提取数值 (支持 4.5, 5, "5.5" 等)
+        # 简单的 float 转换可能失败如果包含非数字字符，所以用正则提取第一个数字部分
+        match = re.search(r"(\d+(\.\d+)?)", val_str)
+        if match:
+            num_val = float(match.group(1))
+
+        if is_shindo:
+            # === 震度逻辑 (JMA/CWA) ===
+            # 1: 白 (idx 0)
+            # 2: 蓝 (idx 1)
+            # 3: 绿 (idx 2)
+            # 4: 黄 (idx 3)
+            # 5弱, 5强 (5-, 5+, 4.5-5.4): 橙 (idx 4)
+            # 6弱, 6强 (6-, 6+, 5.5-6.4): 红 (idx 5)
+            # 7 (>=6.5): 紫 (idx 6)
+            # ===========================
+            # 1. 优先处理数值（防止 "3.5" 被识别为 "5" 或 "3"）
+            if num_val is not None:
+                if num_val >= 9:
+                    # JMA 内部数值 (10=1, ..., 45=5-, 50=5+, 55=6-, 60=6+, 70=7)
+                    if num_val < 20:
+                        idx = 0
+                    elif num_val < 30:
+                        idx = 1
+                    elif num_val < 40:
+                        idx = 2
+                    elif num_val < 45:
+                        idx = 3
+                    elif num_val < 55:
+                        idx = 4
+                    elif num_val < 65:
+                        idx = 5
+                    else:
+                        idx = 6
+                else:
+                    # 普通数值 / CWA Wolfx处理后的数值 (4.5=5弱, 5.0=5强, 5.5=6弱...)
+                    if num_val < 1.5:
+                        idx = 0
+                    elif num_val < 2.5:
+                        idx = 1
+                    elif num_val < 3.5:
+                        idx = 2
+                    elif num_val < 4.5:
+                        idx = 3
+                    elif num_val < 5.5:
+                        idx = 4  # 4.5(5弱), 5.0(5强) -> 橙色
+                    elif num_val < 6.5:
+                        idx = 5  # 5.5(6弱), 6.0(6强) -> 红色
+                    else:
+                        idx = 6  # >= 6.5 -> 紫色
+            # 2. 字符串匹配（后备）
+            elif "7" in val_str:
+                idx = 6
+            elif "6" in val_str:
+                idx = 5
+            elif "5" in val_str:
+                idx = 4
+            elif "4" in val_str:
+                idx = 3
+            elif "3" in val_str:
+                idx = 2
+            elif "2" in val_str:
+                idx = 1
+            elif "1" in val_str:
+                idx = 0
+            else:
+                idx = 0
+
+        else:
+            # === 烈度逻辑 (CSIS/MMI) ===
+            # 1-2: 白 (idx 0)
+            # 3-4: 蓝 (idx 1)
+            # 5: 绿 (idx 2)
+            # 6: 黄 (idx 3)
+            # 7-8: 橙 (idx 4)
+            # 9-10: 红 (idx 5)
+            # 11-12: 紫 (idx 6)
+
+            if num_val is not None:
+                if num_val < 2.5:
+                    idx = 0  # 1-2 (实际上通常没有小数，为了稳健使用范围)
+                elif num_val < 4.5:
+                    idx = 1  # 3-4
+                elif num_val < 5.5:
+                    idx = 2  # 5
+                elif num_val < 6.5:
+                    idx = 3  # 6
+                elif num_val < 8.5:
+                    idx = 4  # 7-8
+                elif num_val < 10.5:
+                    idx = 5  # 9-10
+                else:
+                    idx = 6  # 11-12
+            else:
+                idx = 0
+
+    except Exception:
+        return ""
+
+    return emojis[idx]
 
 
 class CEAEEWFormatter(BaseMessageFormatter):
@@ -53,7 +177,10 @@ class CEAEEWFormatter(BaseMessageFormatter):
 
         # 预估最大烈度
         if earthquake.intensity is not None:
-            lines.append(f"💥预估最大烈度：{earthquake.intensity}")
+            emoji = _get_intensity_emoji(
+                earthquake.intensity, is_eew=True, is_shindo=False
+            )
+            lines.append(f"💥预估最大烈度：{earthquake.intensity} {emoji}")
 
         # 本地烈度预估
         if hasattr(earthquake, "raw_data") and isinstance(earthquake.raw_data, dict):
@@ -116,7 +243,8 @@ class CWAEEWFormatter(BaseMessageFormatter):
 
         # 预估最大震度
         if earthquake.scale is not None:
-            lines.append(f"💥预估最大震度：{earthquake.scale}")
+            emoji = _get_intensity_emoji(earthquake.scale, is_eew=True, is_shindo=True)
+            lines.append(f"💥预估最大震度：{earthquake.scale} {emoji}")
 
         # 本地烈度预估
         if hasattr(earthquake, "raw_data") and isinstance(earthquake.raw_data, dict):
@@ -198,10 +326,14 @@ class JMAEEWFormatter(BaseMessageFormatter):
         # 预估最大震度
         # Fan Studio 使用 intensity (epiIntensity)，P2P 使用 scale
         if earthquake.scale is not None:
-            lines.append(f"💥预估最大震度：{earthquake.scale}")
+            emoji = _get_intensity_emoji(earthquake.scale, is_eew=True, is_shindo=True)
+            lines.append(f"💥预估最大震度：{earthquake.scale} {emoji}")
         elif earthquake.intensity is not None:
             # Fan Studio 数据中的 epiIntensity 已经是震度字符串 (e.g. "4", "5+")
-            lines.append(f"💥预估最大震度：{earthquake.intensity}")
+            emoji = _get_intensity_emoji(
+                earthquake.intensity, is_eew=True, is_shindo=True
+            )
+            lines.append(f"💥预估最大震度：{earthquake.intensity} {emoji}")
 
         # 警报区域详情 (仅针对警报且有区域数据)
         raw_data = getattr(earthquake, "raw_data", {})
@@ -302,7 +434,10 @@ class CENCEarthquakeFormatter(BaseMessageFormatter):
 
         # 最大烈度
         if earthquake.intensity is not None:
-            lines.append(f"💥最大烈度：{earthquake.intensity}")
+            emoji = _get_intensity_emoji(
+                earthquake.intensity, is_eew=False, is_shindo=False
+            )
+            lines.append(f"💥最大烈度：{earthquake.intensity} {emoji}")
 
         return "\n".join(lines)
 
@@ -402,7 +537,8 @@ class JMAEarthquakeFormatter(BaseMessageFormatter):
 
         # 最大震度
         if earthquake.scale is not None:
-            lines.append(f"💥最大震度：{earthquake.scale}")
+            emoji = _get_intensity_emoji(earthquake.scale, is_eew=False, is_shindo=True)
+            lines.append(f"💥最大震度：{earthquake.scale} {emoji}")
 
         # 津波信息
         if earthquake.domestic_tsunami:
@@ -454,6 +590,9 @@ class JMAEarthquakeFormatter(BaseMessageFormatter):
 
                     for scale_key in sorted_scales:
                         scale_disp = get_scale_disp(scale_key)
+                        emoji = _get_intensity_emoji(
+                            scale_key, is_eew=False, is_shindo=True
+                        )
                         locs = scale_groups[scale_key]
 
                         # 如果地点太多，分行显示或截断（避免消息过长）
@@ -466,15 +605,18 @@ class JMAEarthquakeFormatter(BaseMessageFormatter):
                         if len(locs) > max_show:
                             loc_str += f" 等{len(locs)}处"
 
-                        lines.append(f"  [震度{scale_disp}] {loc_str}")
+                        lines.append(f"  {emoji}[震度{scale_disp}] {loc_str}")
                 else:
                     # 默认模式：只显示最大震度区域
                     max_scale_key = max(scale_groups.keys()) if scale_groups else None
                     if max_scale_key:
                         scale_disp = get_scale_disp(max_scale_key)
+                        emoji = _get_intensity_emoji(
+                            max_scale_key, is_eew=False, is_shindo=True
+                        )
                         locs = scale_groups[max_scale_key][:5]
                         lines.append(
-                            f"📡震度 {scale_disp} 观测点：{'、'.join(locs)}{'等' if len(scale_groups[max_scale_key]) > 5 else ''}"
+                            f"📡震度 {scale_disp} {emoji} 观测点：{'、'.join(locs)}{'等' if len(scale_groups[max_scale_key]) > 5 else ''}"
                         )
 
             # 备注信息 (comments)
@@ -660,7 +802,10 @@ class GlobalQuakeFormatter(BaseMessageFormatter):
 
         # 预估最大烈度
         if earthquake.intensity is not None:
-            lines.append(f"💥预估最大烈度：{earthquake.intensity}")
+            emoji = _get_intensity_emoji(
+                earthquake.intensity, is_eew=True, is_shindo=False
+            )
+            lines.append(f"💥预估最大烈度：{earthquake.intensity} {emoji}")
 
         # 最大加速度
         if earthquake.max_pga is not None:
