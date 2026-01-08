@@ -23,6 +23,7 @@ from .handler_registry import WebSocketHandlerRegistry
 from .handlers import DATA_HANDLERS
 from .message_logger import MessageLogger
 from .message_manager import MessagePushManager
+from .statistics_manager import StatisticsManager
 from .websocket_manager import HTTPDataFetcher, WebSocketManager
 
 
@@ -36,6 +37,9 @@ class DisasterWarningService:
 
         # 初始化消息记录器
         self.message_logger = MessageLogger(config, "disaster_warning")
+
+        # 初始化统计管理器
+        self.statistics_manager = StatisticsManager()
 
         # 初始化组件
         self.ws_manager = WebSocketManager(
@@ -423,11 +427,15 @@ class DisasterWarningService:
             logger.debug(
                 f"[灾害预警] 处于启动静默期 (剩余 {silence_duration - elapsed:.1f}s)，忽略事件: {event.id}"
             )
+            # 静默期内不记录统计数据，直接返回
             return
 
         try:
             logger.debug(f"[灾害预警] 处理灾害事件: {event.id}")
             self._log_event(event)
+
+            # 记录统计数据 (不管是否推送成功)
+            self.statistics_manager.record_push(event)
 
             # 推送消息 - 使用新消息管理器
             push_result = await self.message_manager.push_event(event)
@@ -490,7 +498,7 @@ class DisasterWarningService:
             "global_quake_connected": global_quake_connected,
             "total_connections": len(connection_status),
             "connection_details": connection_status,
-            "push_stats": self.message_manager.get_push_stats(),
+            "statistics_summary": self.statistics_manager.get_summary(),
             "data_sources": self._get_active_data_sources(),
             "message_logger_enabled": self.message_logger.enabled
             if self.message_logger
