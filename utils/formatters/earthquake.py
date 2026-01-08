@@ -704,14 +704,10 @@ class GlobalQuakeFormatter(BaseMessageFormatter):
         else:
             mag_class = "bg-high"
 
-        # 格式化时间 (显示为 UTC)
+        # 格式化时间 (显示为 UTC+8)
         shock_time = earthquake.shock_time
         if shock_time:
-            if shock_time.tzinfo is None:
-                shock_time = shock_time.replace(tzinfo=timezone.utc)
-            else:
-                shock_time = shock_time.astimezone(timezone.utc)
-            time_str = shock_time.strftime("%Y-%m-%d %H:%M:%S UTC")
+            time_str = GlobalQuakeFormatter.format_time(shock_time, "UTC+8")
         else:
             time_str = "Unknown Time"
 
@@ -756,7 +752,10 @@ class GlobalQuakeFormatter(BaseMessageFormatter):
             "depth": earthquake.depth,
             "latitude": f"{earthquake.latitude:.4f}",
             "longitude": f"{earthquake.longitude:.4f}",
-            "pga": f"{earthquake.max_pga:.1f}"
+            "epicenter_str": GlobalQuakeFormatter.format_coordinates(
+                earthquake.latitude, earthquake.longitude
+            ),
+            "pga": f"{earthquake.max_pga:.1f} gal"
             if earthquake.max_pga is not None
             else "N/A",
             "location_error": location_error,
