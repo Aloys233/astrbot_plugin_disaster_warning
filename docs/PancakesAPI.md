@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD024 -->
 <!-- markdownlint-disable MD036 -->
 <!-- markdownlint-disable MD051 -->
-# OpenQuakeAPI
+# PancakesAPI
 
 **Base URL**: `wss://api.aloys23.link`
 

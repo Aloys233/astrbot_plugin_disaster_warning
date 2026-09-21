@@ -20,7 +20,7 @@ from .base_parser import BaseParser
 class WeatherAlarmParser(BaseParser):
     """中国气象局气象预警解析器。
 
-    支持 FAN Studio 扁平载荷与 OpenQuakeAPI RealtimeEvent 包装格式。
+    支持 FAN Studio 扁平载荷与 PancakesAPI RealtimeEvent 包装格式。
     构造时按 source_id 区分数据源，各源维护独立的短窗去重队列，
     跨源不去重。
     """
@@ -37,7 +37,7 @@ class WeatherAlarmParser(BaseParser):
     def _parse_data(self, data: dict[str, Any]) -> EventEnvelope | None:
         """解析中国气象局气象预警数据。"""
         try:
-            # OpenQuakeAPI RealtimeEvent 解包：外层有 source/type/action/payload
+            # PancakesAPI RealtimeEvent 解包：外层有 source/type/action/payload
             # 返回 (payload, is_realtime)；is_realtime=True 表示已确认是 RealtimeEvent
             # 但被丢弃（如 action=remove / 非 weather 类型），此时不再回退到
             # FAN Studio 扁平载荷提取，避免把 RealtimeEvent 外层当扁平预警误处理。
@@ -235,7 +235,7 @@ class WeatherAlarmParser(BaseParser):
     def _extract_realtime_payload(
         self, data: dict[str, Any]
     ) -> tuple[dict[str, Any] | None, bool] | None:
-        """解包 OpenQuakeAPI RealtimeEvent 外层结构。
+        """解包 PancakesAPI RealtimeEvent 外层结构。
 
         RealtimeEvent 格式：
             {source, type, action, timestampMs, payload: {...}}

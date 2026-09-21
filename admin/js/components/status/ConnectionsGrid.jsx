@@ -3,15 +3,16 @@ const { useMemo, useState, useCallback } = React;
 
 /**
  * 连接状态网格组件 (ConnectionsGrid)
- * 显示主流数据源（FAN Studio / P2P / Wolfx / OpenQuakeAPI）与 HTTP 辅助通道
- * EQSC、NIED S-Net 的实时连接情况、TCP 延迟、重试次数以及启用的子数据源明细。
+ * 显示主流数据源（FAN Studio / P2P / Wolfx / PancakesAPI）与 HTTP 辅助通道
+ * （EQSC API、NIED S-Net）的实时连接状态、协议信息及子源分布。
  *
- * 布局：
- * - 第 1 列：FAN Studio（可翻转：正面主通道 / 背面 CENC 烈度速报独立 WS）
- * - 第 2 列：P2P + NIED S-Net 上下堆叠（connection-stack）
- * - 第 3 列：Wolfx
- * - 第 4 列：OpenQuakeAPI + EQSC API 上下堆叠
- *
+ * 布局策略：
+ * - 大屏（>= 1280px）：固定 5 列均匀分布
+ * - - 第 1 列：FAN Studio
+ * - - 第 2 列：FAN Studio 烈度速报（独立 WS）
+ * - - 第 3 列：P2P 地震情报
+ * - - 第 4 列：Wolfx
+ * - - 第 5 列：PancakesAPI + EQSC API 上下堆叠（EQSC 为 HTTP 轮询模式）
  * 延迟评级：
  * - < 150ms  fast (绿色)
  * - < 460ms  medium (黄色)
@@ -241,14 +242,16 @@ function ConnectionsGrid() {
             },
             {
                 id: 'gq',
-                displayName: 'OpenQuakeAPI',
+                displayName: 'PancakesAPI',
                 matcher: (key) => {
                     const k = String(key || '').toLowerCase();
-                    // OpenQuakeAPI 连接组 key 为 openquake_api；兼容历史 global_quake / gq
+                    // PancakesAPI 连接组 key 为 pancakes_api；兼容历史 openquake_api / global_quake / gq
                     return (
-                        k === 'openquake_api'
+                        k === 'pancakes_api'
+                        || k === 'openquake_api'
                         || k === 'global_quake'
                         || k === 'gq'
+                        || k.includes('pancakes')
                         || k.includes('openquake')
                         || k.includes('global_quake')
                     ) && !k.includes('eqsc');
@@ -391,10 +394,17 @@ function ConnectionsGrid() {
                 japan_jma_earthquake: '日本气象厅地震情报',
                 china_cenc_earthquake: '中国地震台网地震测定',
             },
+            PancakesAPI: {
+                global_quake: 'Global Quake',
+                china_weather_alarm: '中国气象局: 气象预警',
+                china_weather_openquake: '中国气象局: 气象预警',
+                china_weather_pancakes: '中国气象局: 气象预警',
+            },
             OpenQuakeAPI: {
                 global_quake: 'Global Quake',
                 china_weather_alarm: '中国气象局: 气象预警',
                 china_weather_openquake: '中国气象局: 气象预警',
+                china_weather_pancakes: '中国气象局: 气象预警',
             },
             'EQSC API': {
                 china_typhoon: '中国气象局：实时活跃台风',

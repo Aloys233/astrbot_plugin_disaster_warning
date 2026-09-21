@@ -42,7 +42,7 @@ class SourceEnabledRule(BaseRule):
 
         # 组内子源开关：缺省 False。
         # 单源组（S-Net）的 config_key 可能与分组开关同为 "enabled"；
-        # OpenQuakeAPI / Fan / Wolfx / P2P / EQSC 等则检查独立子键。
+        # PancakesAPI / Fan / Wolfx / P2P / EQSC 等则检查独立子键。
         if not bool(group_cfg.get(source_entry.config_key, False)):
             return False, f"已禁用数据源 {source_id}"
 

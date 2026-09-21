@@ -321,13 +321,13 @@ SOURCE_CATALOG: dict[str, SourceEntry] = {
         provider_aliases=("wolfx_jma_eew", "jma_eew"),
         routing_tags=("wolfx", "japan", "eew"),
     ),
-    # global_quake: OpenQuakeAPI /ws/all 聚合连接下的 Global Quake 子源
+    # global_quake: PancakesAPI /ws/all 聚合连接下的 Global Quake 子源
     "global_quake": SourceEntry(
         source_id="global_quake",
         source_enum="global_quake",
         source_type=SourceType.EARTHQUAKE_WARNING,
         provider_family=ProviderFamily.GLOBAL_QUAKE,
-        config_group="openquake_api",
+        config_group="pancakes_api",
         config_key="global_quake",
         parser_name="global_quake_parser",
         presentation_type="global_quake",
@@ -336,19 +336,19 @@ SOURCE_CATALOG: dict[str, SourceEntry] = {
         intensity_mode="intensity",
         priority=3,
         display_name="Global Quake",
-        description="OpenQuakeAPI /ws/all 聚合推送中的 Global Quake 全球地震实时数据",
+        description="PancakesAPI /ws/all 聚合推送中的 Global Quake 全球地震实时数据",
         default_timezone="UTC",
         publish_time_field="update_time",
         report_num_field="report_num",
         fingerprint_prefix="gq",
-        connection_group="openquake_api",
-        connection_handler="openquake_api",
-        connection_data_source="openquake_mixed",
+        connection_group="pancakes_api",
+        connection_handler="pancakes_api",
+        connection_data_source="pancakes_mixed",
         connection_url="wss://api.aloys23.link/ws/all",
         dispatch_family="global_quake",
         provider_source_names=("gq", "global_quake", "globalquake"),
         provider_aliases=("global_quake",),
-        routing_tags=("global_quake", "global", "eew", "openquake"),
+        routing_tags=("global_quake", "global", "eew", "pancakes", "openquake"),
     ),
     # cenc_fanstudio: 中国地震台网地震测定数据 - 来自 FAN Studio
     "cenc_fanstudio": SourceEntry(
@@ -794,7 +794,7 @@ SOURCE_CATALOG: dict[str, SourceEntry] = {
         payload_signatures=(("type",),),
         payload_predicates=("weather_alert",),
     ),
-    # china_weather_openquake: 中国气象局气象预警 - OpenQuakeAPI /ws/all (source=cma)
+    # china_weather_openquake: 中国气象局气象预警 - PancakesAPI /ws/all (source=cma)
     # 高优先级气象源（priority=3 > Fan=1），与 Fan 不做跨源去重，可双推。
     # payload 直接透传 CMA 预警地图 API 字段（id/headline/effective/description/lon/lat/type/title）。
     "china_weather_openquake": SourceEntry(
@@ -802,7 +802,7 @@ SOURCE_CATALOG: dict[str, SourceEntry] = {
         source_enum="openquake_cma_weather",
         source_type=SourceType.WEATHER,
         provider_family=ProviderFamily.GLOBAL_QUAKE,
-        config_group="openquake_api",
+        config_group="pancakes_api",
         config_key="china_weather_alarm",
         parser_name="weather_alarm_parser",
         presentation_type="weather",
@@ -811,18 +811,18 @@ SOURCE_CATALOG: dict[str, SourceEntry] = {
         intensity_mode="none",
         priority=3,
         display_name="中国气象局（气象预警）",
-        description="中国气象局气象预警 - OpenQuakeAPI WebSocket（source=cma，高优先级）",
+        description="中国气象局气象预警 - PancakesAPI WebSocket（source=cma，高优先级）",
         default_timezone="Asia/Shanghai",
         publish_time_field="issue_time",
         fingerprint_prefix="cn_weather_oq",
-        connection_group="openquake_api",
-        connection_handler="openquake_api",
-        connection_data_source="openquake_mixed",
+        connection_group="pancakes_api",
+        connection_handler="pancakes_api",
+        connection_data_source="pancakes_mixed",
         connection_url="wss://api.aloys23.link/ws/all",
-        dispatch_family="openquake_weather",
+        dispatch_family="pancakes_weather",
         provider_source_names=("cma",),
-        provider_aliases=("openquake_cma", "cma_weather", "cma"),
-        routing_tags=("openquake", "china", "weather", "cma"),
+        provider_aliases=("pancakes_cma", "openquake_cma", "cma_weather", "cma"),
+        routing_tags=("pancakes", "openquake", "china", "weather", "cma"),
     ),
     # typhoon_fanstudio: 实时活跃台风 - FAN Studio
     "typhoon_fanstudio": SourceEntry(

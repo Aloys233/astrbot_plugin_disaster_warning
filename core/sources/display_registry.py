@@ -77,6 +77,7 @@ SOURCE_ALIAS_MAP: dict[str, str] = {
     "sa": "sa_fanstudio",
     "shakealert": "sa_fanstudio",
     "china_weather_alarm": "china_weather_fanstudio",
+    "pancakes_cma": "china_weather_openquake",
     "openquake_cma": "china_weather_openquake",
     "cma_weather": "china_weather_openquake",
     "cma": "china_weather_openquake",
@@ -139,7 +140,7 @@ SOURCE_DISPLAY_MAP: dict[str, str] = {
     "sa_fanstudio": "美国 ShakeAlert 地震预警",
     "jma_fanstudio": "日本气象厅: 紧急地震速报 - Fan",
     "china_weather_fanstudio": "中国气象局: 气象预警 - Fan",
-    "china_weather_openquake": "中国气象局: 气象预警 - OQ",
+    "china_weather_openquake": "中国气象局: 气象预警 - Pancakes",
     "china_tsunami_fanstudio": "自然资源部海啸预警中心",
     # 贡献榜默认中性名：实时通道不强制带后缀
     "typhoon_fanstudio": "中国气象局：实时活跃台风",
@@ -173,7 +174,8 @@ CONNECTION_DISPLAY_NAMES: dict[str, str] = {
     "fan_studio_cenc_ir": "FAN Studio（烈度速报）",
     "p2p_main": "P2P地震情報",
     "wolfx_all": "Wolfx",
-    "openquake_api": "OpenQuakeAPI",
+    "pancakes_api": "PancakesAPI",
+    "openquake_api": "PancakesAPI",
     "snet_msil": "NIED S-Net",
     "eqsc": "EQSC API",
 }
@@ -196,7 +198,7 @@ CONNECTION_GROUP_ORDER: tuple[str, ...] = (
     "fan_studio_cenc_ir",
     "p2p_main",
     "wolfx_all",
-    "openquake_api",
+    "pancakes_api",
     "snet_msil",
     "eqsc",
 )
@@ -211,7 +213,7 @@ CONNECTION_GROUP_ALIAS: dict[str, str] = {
     ProviderFamily.FAN_STUDIO.value: "fan_studio_all",
     ProviderFamily.P2P.value: "p2p_main",
     ProviderFamily.WOLFX.value: "wolfx_all",
-    ProviderFamily.GLOBAL_QUAKE.value: "openquake_api",
+    ProviderFamily.GLOBAL_QUAKE.value: "pancakes_api",
     ProviderFamily.DIRECT_HTTP.value: "snet_msil",
 }
 
@@ -227,7 +229,10 @@ DISPLAY_NAME_ALIASES: dict[str, str] = {
     "Fan Studio（烈度速报）": "fan_studio_cenc_ir",
     "P2P地震情報": "p2p_main",
     "Wolfx": "wolfx_all",
-    "OpenQuakeAPI": "openquake_api",
+    "PancakesAPI": "pancakes_api",
+    "OpenQuakeAPI": "pancakes_api",
+    "openquake_api": "pancakes_api",
+    "pancakes_api": "pancakes_api",
     "NIED S-Net": "snet_msil",
     "EQSC API": "eqsc",
 }

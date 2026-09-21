@@ -1,6 +1,6 @@
 """
 全球地震源解析器。
-负责解析 OpenQuakeAPI (Global Quake)、美国地质调查局与美国 ShakeAlert 来源的全球地震数据，
+负责解析 PancakesAPI (Global Quake)、美国地质调查局与美国 ShakeAlert 来源的全球地震数据，
 并统一为领域事件。
 """
 
@@ -23,7 +23,7 @@ from .base_parser import BaseParser
 
 
 class GlobalQuakeParser(BaseParser):
-    """OpenQuakeAPI / Global Quake 解析器。
+    """PancakesAPI / Global Quake 解析器。
 
     上游当前以 JSON RealtimeEvent 为主（source/type/action/timestampMs/payload），
     同时保留对历史 protobuf 二进制帧的兼容解析。
@@ -44,7 +44,7 @@ class GlobalQuakeParser(BaseParser):
 
     @staticmethod
     def _extract_realtime_payload(data: dict[str, Any]) -> dict[str, Any]:
-        """提取 OpenQuakeAPI RealtimeEvent 的业务载荷。
+        """提取 PancakesAPI RealtimeEvent 的业务载荷。
 
         新协议优先使用 payload；兼容历史 data/Data 包装与无包装扁平结构。
         某个包装键存在但不是 dict 时继续尝试后续候选键，避免误丢合法载荷。
@@ -103,7 +103,7 @@ class GlobalQuakeParser(BaseParser):
             return None
 
     def _parse_json_message(self, message: str) -> EventEnvelope | None:
-        """解析 OpenQuakeAPI JSON 实时事件。"""
+        """解析 PancakesAPI JSON 实时事件。"""
         try:
             data = json.loads(message)
             if not isinstance(data, dict):
@@ -408,7 +408,7 @@ class GlobalQuakeParser(BaseParser):
             return None
 
     def _parse_earthquake_data(self, data: dict[str, Any]) -> EventEnvelope | None:
-        """解析 OpenQuakeAPI / Global Quake JSON 地震数据。"""
+        """解析 PancakesAPI / Global Quake JSON 地震数据。"""
         try:
             eq_data = self._extract_realtime_payload(data)
             if not eq_data:

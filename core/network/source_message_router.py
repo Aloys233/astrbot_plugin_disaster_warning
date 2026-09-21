@@ -17,6 +17,7 @@ from ..sources.source_catalog import get_source_entry, get_source_ids_by_dispatc
 from ..sources.source_entry import ProviderFamily
 from ..sources.source_router import (
     get_openquake_source_id,
+    get_pancakes_source_id,
     get_provider_source_map,
     get_wolfx_source_id,
     route_fan_studio_message,
@@ -94,7 +95,8 @@ class SourceMessageRouter:
         ws_manager.register_handler("fan_studio", self._create_fan_studio_handler())
         ws_manager.register_handler("p2p", self._create_p2p_handler())
         ws_manager.register_handler("wolfx", self._create_wolfx_handler())
-        ws_manager.register_handler("openquake_api", self._create_openquake_handler())
+        ws_manager.register_handler("pancakes_api", self._create_pancakes_handler())
+        ws_manager.register_handler("openquake_api", self._create_pancakes_handler())
 
     async def _dispatch_event(
         self,
@@ -611,18 +613,18 @@ class SourceMessageRouter:
 
         return wolfx_handler
 
-    def _create_openquake_handler(self):
-        """创建 OpenQuakeAPI 聚合连接的消息处理器。
+    def _create_pancakes_handler(self):
+        """创建 PancakesAPI 聚合连接的消息处理器。
 
         连接挂在全量端点后，按 RealtimeEvent.source 分发到已注册子源；
-        当前仅接入 Global Quake（gq），其余 source 先忽略以便后续继续接入。
+        当前已接入 Global Quake（gq）与中国气象局气象预警（cma），其余 source 先忽略以便后续继续接入。
         """
 
-        async def openquake_handler(
+        async def pancakes_handler(
             message, connection_name=None, connection_info=None
         ):
             self._log_received_message(
-                "OpenQuakeAPI",
+                "PancakesAPI",
                 message,
                 connection_name=connection_name,
                 connection_info=connection_info,
@@ -630,7 +632,7 @@ class SourceMessageRouter:
 
             # 任意入站帧都可推进静默门闩（含状态/心跳类），避免无震时干等 first_payload_timeout
             self._note_connection_bootstrap(
-                connection_name, kind="openquake_first_payload"
+                connection_name, kind="pancakes_first_payload"
             )
 
             try:
@@ -658,7 +660,7 @@ class SourceMessageRouter:
                     data = json.loads(raw_text)
                 except json.JSONDecodeError as error:
                     plugin_logger.error(
-                        f"[灾害预警] OpenQuakeAPI JSON 解析失败: {error}"
+                        f"[灾害预警] PancakesAPI JSON 解析失败: {error}"
                     )
                     return
 
@@ -678,7 +680,7 @@ class SourceMessageRouter:
                 }:
                     return
 
-                source_id = get_openquake_source_id(source_name)
+                source_id = get_pancakes_source_id(source_name)
                 if source_id is None:
                     return
 
@@ -699,7 +701,7 @@ class SourceMessageRouter:
                     connection_info.get("uri") if connection_info else "未知地址"
                 )
                 plugin_logger.error(
-                    f"[灾害预警] OpenQuakeAPI 处理器处理来自 "
+                    f"[灾害预警] PancakesAPI 处理器处理来自 "
                     f"{connection_name or '未知连接'} 的消息失败，"
                     f"连接地址为 {connection_uri}，错误为 {error}",
                     exc_info=True,
@@ -707,10 +709,14 @@ class SourceMessageRouter:
                 # 异常遥测
                 await self._track_router_error(
                     error,
-                    module="core.source_message_router.openquake_handler",
+                    module="core.source_message_router.pancakes_handler",
                 )
 
-        return openquake_handler
+        return pancakes_handler
+
+    # 向后兼容别名
+    _create_openquake_handler = _create_pancakes_handler
+
 
 
 __all__ = ["SourceMessageRouter"]

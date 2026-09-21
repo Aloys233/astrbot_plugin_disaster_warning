@@ -128,7 +128,7 @@ class SourceRuntimeQueryService:
         service: Any | None,
         actual_connections: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """统一计算活跃连接数与 OpenQuakeAPI 在线标记。
+        """统一计算活跃连接数与 PancakesAPI 在线标记。
 
         口径：
         - WebSocket：ws_manager 连接表中 connected=True
@@ -161,27 +161,28 @@ class SourceRuntimeQueryService:
         ):
             active += 1
 
-        # OpenQuakeAPI 在线标记优先以实际连接状态为准：
+        # PancakesAPI 在线标记优先以实际连接状态为准：
         # 建连失败/服务停止后任务名仍可能残留，无法代表真实连通性。
         # actual_connections 由 ws_manager 实时维护 connected 状态，作为首选口径；
         # 任务名检查仅作为连接状态缺失时的兜底。
-        oq_status = actual_connections.get("openquake_api")
-        openquake_connected = bool(
-            isinstance(oq_status, dict) and oq_status.get("connected")
+        pc_status = actual_connections.get("pancakes_api") or actual_connections.get("openquake_api")
+        pancakes_connected = bool(
+            isinstance(pc_status, dict) and pc_status.get("connected")
         )
-        if not openquake_connected:
+        if not pancakes_connected:
             connection_tasks = (
                 getattr(service, "connection_tasks", []) if service is not None else []
             )
-            openquake_connected = any(
-                "openquake_api" in task.get_name()
+            pancakes_connected = any(
+                ("pancakes_api" in task.get_name() or "openquake_api" in task.get_name())
                 if hasattr(task, "get_name")
                 else False
                 for task in connection_tasks
             )
         return {
             "active_websocket_connections": int(active),
-            "openquake_connected": bool(openquake_connected),
+            "pancakes_connected": bool(pancakes_connected),
+            "openquake_connected": bool(pancakes_connected),
         }
 
     def build_runtime_snapshot(
@@ -194,6 +195,7 @@ class SourceRuntimeQueryService:
         uptime: str = "未运行",
         active_websocket_connections: int = 0,
         message_logger_enabled: bool = False,
+        pancakes_connected: bool | None = None,
         openquake_connected: bool = False,
     ) -> dict[str, Any]:
         """构建统一运行态快照。
@@ -234,11 +236,15 @@ class SourceRuntimeQueryService:
         # 总连接数按 catalog 期望的物理通道口径统计（含已停用但应展示的通道），
         # 避免数据源被临时关闭后从分母消失，出现 6/6 而非 6/7。
         # expected_groups 已包含 WS（FAN/P2P/Wolfx/GQ）与 HTTP（EQSC/S-Net）。
+        is_connected = bool(
+            pancakes_connected if pancakes_connected is not None else openquake_connected
+        )
         return {
             "running": running,
             "uptime": uptime,
             "active_websocket_connections": active_websocket_connections,
-            "openquake_connected": openquake_connected,
+            "pancakes_connected": is_connected,
+            "openquake_connected": is_connected,
             "total_connections": len(expected_groups),
             "connection_details": actual_connections,
             "connections": connections,

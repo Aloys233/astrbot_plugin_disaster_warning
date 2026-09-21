@@ -210,28 +210,28 @@
           }
         }
       },
-      "openquake_api": {
-        "description": "OpenQuakeAPI 数据源",
+      "pancakes_api": {
+        "description": "PancakesAPI 数据源",
         "type": "object",
-        "hint": "OpenQuakeAPI 连接组数据源总开关",
+        "hint": "PancakesAPI 连接组数据源总开关",
         "items": {
           "enabled": {
-            "description": "启用 OpenQuakeAPI 数据源",
+            "description": "启用 PancakesAPI 数据源",
             "type": "bool",
             "default": true,
-            "hint": "控制 OpenQuakeAPI 通道是否启用。关闭后所有 OpenQuakeAPI 子源均不可用"
+            "hint": "控制 PancakesAPI 通道是否启用。关闭后所有 PancakesAPI 子源均不可用"
           },
           "global_quake": {
             "description": "Global Quake",
             "type": "bool",
             "default": true,
-            "hint": "通过 OpenQuakeAPI 获取 Global Quake 全球地震实时数据（由全球测站实时测算，精度有限）"
+            "hint": "通过 PancakesAPI 获取 Global Quake 全球地震实时数据（由全球测站实时测算，精度有限）"
           },
           "china_weather_alarm": {
             "description": "中国气象局：气象预警",
             "type": "bool",
             "default": true,
-            "hint": "通过 OpenQuakeAPI 接收中国气象局气象预警信息"
+            "hint": "通过 PancakesAPI 接收中国气象局气象预警信息"
           }
         }
       },

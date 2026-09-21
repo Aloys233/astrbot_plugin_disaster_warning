@@ -68,6 +68,7 @@ class DisasterServiceRuntimeService:
                 "fan_studio",
                 "p2p",
                 "wolfx",
+                "pancakes_api",
                 "openquake_api",
             ]:
                 # 这份连接附加信息会一路传入连接管理器，作为连接状态展示、重连通知、

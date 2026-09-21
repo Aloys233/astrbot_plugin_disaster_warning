@@ -233,7 +233,7 @@ class MessageBuildService:
         # 6. 气象预警图标（缺省开；有预警编码才附加）
         if (
             source_id.startswith("china_weather")
-            or source_id == "china_weather_openquake"
+            or source_id in ("china_weather_openquake", "china_weather_pancakes")
         ):
             weather_cfg = (
                 cfg.get("weather_config")
@@ -1132,7 +1132,7 @@ class MessageBuildService:
 
         metadata = self._get_event_metadata(event)
         # 从多层元数据中提取气象预警类型编码。
-        # Fan Studio 格式如 11B20_yellow；OpenQuakeAPI CMA 格式如 p0002003。
+        # Fan Studio 格式如 11B20_yellow；PancakesAPI CMA 格式如 p0002003。
         raw_weather_code = (
             metadata.get("weather_code")
             or metadata.get("type")
@@ -1146,7 +1146,7 @@ class MessageBuildService:
         raw_weather_code = raw_weather_code.strip()
 
         # 统一解析为 Fan Studio 图标接口兼容的 11B 完整码。
-        # p 编码（OpenQuakeAPI CMA）会通过映射表转换为 11B 码；
+        # p 编码（PancakesAPI CMA）会通过映射表转换为 11B 码；
         # 已有 11B 码直接使用；无法映射的返回 None 走本地回退。
         title_text = getattr(domain_event, "title", "") or metadata.get("title", "")
         headline_text = getattr(domain_event, "headline", "") or metadata.get(

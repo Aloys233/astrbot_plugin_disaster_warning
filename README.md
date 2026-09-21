@@ -909,12 +909,12 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 - **日本气象厅地震情报** (P2P / Wolfx) - 详细地震情报。
 - **USGS地震测定** (FAN Studio) - 美国地质调查局地震信息。
 - **美国 ShakeAlert 地震预警** (FAN Studio) - 美国西海岸 ShakeAlert 实时地震预警。
-- **Global Quake** (OpenQuakeAPI) - 全球地震测站实时计算推送 (精度有限)。
-- **中国气象局气象预警** (FAN Studio / OpenQuakeAPI) - 气象灾害预警信息。
+- **Global Quake** (PancakesAPI) - 全球地震测站实时计算推送 (精度有限)。
+- **中国气象局气象预警** (FAN Studio / PancakesAPI) - 气象灾害预警信息。
 - **中国气象局实时活跃台风** (FAN Studio / EQSC) - 活跃台风信息。
 - **自然资源部海啸预警中心** (FAN Studio) - 海啸预警信息。
 - **日本气象厅海啸预报** (P2P / EQSC) - 日本海啸预报信息。
-- **Global Quake 全球地震** (OpenQuakeAPI) - 全球地震预警信息。
+- **Global Quake 全球地震** (PancakesAPI) - 全球地震预警信息。
 - **日本国土交通省 MSIL 强震动信息** - 日本海沟 S-Net 海底震度计。
 
 ### 📋 状态表格一览
@@ -939,12 +939,12 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 | 日本气象厅地震情报 | Wolfx | 地震情报 | ✅ |
 | 美国地质调查局 (USGS) | FAN Studio | 地震情报 | ✅ |
 | 美国 ShakeAlert 地震预警 | FAN Studio | 地震预警 | ✅ |
-| Global Quake | OpenQuakeAPI | 地震预警 | ✅ |
+| Global Quake | PancakesAPI | 地震预警 | ✅ |
 | 自然资源部海啸预警中心 | FAN Studio | 海啸预警 | ✅ |
 | 日本气象厅津波予報 | P2P | 海啸预警 | ✅ |
 | 日本气象厅津波予報 | EQSC | 海啸预警 | ✅ |
 | 中国气象局气象预警 | FAN Studio | 气象预警 | ✅ |
-| 中国气象局气象预警 | OpenQuakeAPI | 气象预警 | ✅ |
+| 中国气象局气象预警 | PancakesAPI | 气象预警 | ✅ |
 | 中国气象局实时活跃台风 | FAN Studio | 台风信息 | ✅ |
 | 中国气象局实时活跃台风 | EQSC | 台风信息 | ✅ |
 | S-Net 海底地震计 (MSIL) | 日本国土交通省 | 地震情报 | ✅ |
@@ -956,7 +956,7 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 🧪 **测试中**  
 
 > [!TIP]
-> 其中 OpenQuakeAPI 为插件自建数据源，数据服务公开可用。详情请查看[OpenQuakeAPI文档](https://docs.aloys23.link/docs/openquake/overview)。
+> 其中 PancakesAPI 为插件自建数据源，数据服务公开可用。详情请查看[PancakesAPI文档](https://docs.aloys23.link/docs/openquake/overview)。
 
 ### ⏰ 数据延迟
 
@@ -1079,11 +1079,11 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 - **日本气象厅地震情报 (`japan_jma_earthquake`)**: 接收 JMA 地震列表。
 - **中国地震台网地震测定 (`china_cenc_earthquake`)**: 接收 CENC 地震列表。
 
-#### 🔹 OpenQuakeAPI
+#### 🔹 PancakesAPI
 
-- **原理**: 连接到 OpenQuakeAPI 的 `/ws/all` 聚合端点，按 `source` 字段路由 Global Quake、中国气象局气象预警（CMA）等子源。
+- **原理**: 连接到 PancakesAPI 的 `/ws/all` 聚合端点，按 `source` 字段路由 Global Quake、中国气象局气象预警（CMA）等子源。
 - **特点**: 在偏远地区或国际海域，由于官方机构反应时间较长，Global Quake 往往能最先提供初步数据，但震级和位置可能随报数更新而有较大波动。
-- **启用 (`enabled`)**: 控制 OpenQuakeAPI 通道是否启用。关闭后所有 OpenQuakeAPI 子源均不可用。
+- **启用 (`enabled`)**: 控制 PancakesAPI 通道是否启用。关闭后所有 PancakesAPI 子源均不可用。
 - **Global Quake (`global_quake`)**: 获取 Global Quake 全球地震实时数据（这些数据是由全球数千个测站通过算法实时计算得出的，精度有限）。
 - **中国气象局气象预警 (`china_weather_alarm`)**: 接收中国气象局气象预警信息。
 
@@ -1997,7 +1997,7 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 # cenc_ir_fanstudio  (中国地震台网烈度速报 - FAN)
 # cenc_ir_eqsc       (中国地震台网烈度速报 - EQSC)
 # china_weather_fanstudio (中国气象局气象预警 - FAN)
-# china_weather_openquake (中国气象局气象预警 - OpenQuakeAPI)
+# china_weather_openquake (中国气象局气象预警 - PancakesAPI)
 # china_tsunami_fanstudio (自然资源部海啸预警中心 - FAN)
 #
 # 中国台湾:
@@ -2431,7 +2431,7 @@ AstrBot/
 > - [FAN Studio TileMap API](https://tilemap.fanstudio.tech/)
 > - [Wolfx 防灾(防災) 实用类 免费API接口](https://wolfx.jp/zh/docs/open-api)
 > - [EQSC API 文档中心](https://equake.top/apidocs)
-> - [OpenQuakeAPI](https://docs.aloys23.link/docs/openquake/overview)
+> - [PancakesAPI](https://wiki.aloys23.link/wiki/PancakesAPI)
 > - [緊急地震速報で使われる距離減衰式による震度計算](https://qiita.com/soshi1822/items/f5fd9ccf6830d834abc4)
 
 ## 💾 数据持久化与存储
@@ -3022,7 +3022,7 @@ graph TB
 
 后端采用**全异步、分层解耦**的架构，自下而上划分为十大协作层，对应上方后端架构图：
 
-- **1. 宿主与外部输入**：AstrBot 框架作为宿主加载插件，用户与管理员通过聊天命令交互；上游数据源经 **WebSocket 长连接**（FAN Studio / P2P / Wolfx / OpenQuakeAPI）与 **HTTP 轮询**（EQSC、S-Net MSIL、NMC 气象等）持续供给数据；Web 管理端由浏览器访问。
+- **1. 宿主与外部输入**：AstrBot 框架作为宿主加载插件，用户与管理员通过聊天命令交互；上游数据源经 **WebSocket 长连接**（FAN Studio / P2P / Wolfx / PancakesAPI）与 **HTTP 轮询**（EQSC、S-Net MSIL、NMC 气象等）持续供给数据；Web 管理端由浏览器访问。
 - **2. 插件入口层**：`main.py` 保持精简壳职责，将生命周期与命令实现下沉到 `plugin/` 子服务。生命周期服务负责配置修正、管理员同步、遥测注入与 asyncio 异常托管；管理命令与查询命令服务分别实现运维指令与业务查询指令；Web 管理端装配入口负责 FastAPI 服务与实时广播通道的启动。
 - **3. 应用编排层（核心服务）**：核心服务门面（`DisasterWarningService`）持有配置、上下文与共享运行状态，统一装配消息、统计、缓存、查询等基础能力。统一事件流水线将**推送 → 统计 → 管理端广播**串接为固定顺序；EQSC 通道服务统一管理鉴权、熔断与令牌保活，台风数据富化与历史数据库重建服务基于该通道工作。
 - **4. 领域模型与数据源注册层**：`domain/` 定义统一事件信封（地震 / 海啸 / 气象 / 台风）与展示模型、事件上下文与标识（去重指纹基础）；`sources/` 维护数据源目录、条目、机构目录与路由映射，是"配置 → 连接 → 解析 → 展示"全链路的注册中心。
@@ -3420,7 +3420,7 @@ GNU Affero General Public License v3.0 - 详见 [LICENSE](LICENSE) 文件。
 - [Wolfx](https://wolfx.jp/zh/docs/open-api) - 提供地震 API 服务。
 - [EQSC API](https://equake.top/) - 提供高质量的灾害数据。
 - [Global Quake](https://globalquake.net/) - 提供全球地震监测。
-- [Aloys233](https://github.com/Aloys233) - 为插件提供 OpenQuakeAPI 数据服务、提供遥测数据收集与通知服务，参与了多项重要插件功能如 WebUI 的开发。
+- [Aloys233](https://github.com/Aloys233) - 为插件提供 PancakesAPI 数据服务、提供遥测数据收集与通知服务，参与了多项重要插件功能如 WebUI 的开发。
 - [ZeroStar645](https://github.com/ZeroStar645) - 指出了插件在 ARV 计算和震源球绘制上的缺陷，并提供了相关的绘制代码与 JMA 计测震度相关的计算公式。
 
 ## 📚 推荐阅读

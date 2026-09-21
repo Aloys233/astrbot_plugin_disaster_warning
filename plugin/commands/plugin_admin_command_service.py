@@ -566,7 +566,8 @@ class PluginAdminCommandService(CommandTelemetryMixin):
                     ("fan_studio_cenc_ir", "FAN Studio 烈度速报"),
                     ("p2p_main", "P2P地震情報"),
                     ("wolfx_all", "Wolfx"),
-                    ("openquake_api", "OpenQuakeAPI"),
+                    ("pancakes_api", "PancakesAPI"),
+                    ("openquake_api", "PancakesAPI"),
                 ]
             )
             source_group_label_map = OrderedDict(
@@ -574,7 +575,8 @@ class PluginAdminCommandService(CommandTelemetryMixin):
                     ("fan_studio", "FAN Studio"),
                     ("p2p_earthquake", "P2P地震情報"),
                     ("wolfx", "Wolfx"),
-                    ("openquake_api", "OpenQuakeAPI"),
+                    ("pancakes_api", "PancakesAPI"),
+                    ("openquake_api", "PancakesAPI"),
                     ("eqsc", "EQSC API"),
                     ("snet", "NIED S-Net"),
                 ]
@@ -620,6 +622,10 @@ class PluginAdminCommandService(CommandTelemetryMixin):
                     "taiwan_cwa_eew": "台湾中央气象署: 强震即时警报",
                     "japan_jma_earthquake": "日本气象厅地震情报",
                     "china_cenc_earthquake": "中国地震台网地震测定",
+                },
+                "PancakesAPI": {
+                    "global_quake": "Global Quake",
+                    "china_weather_alarm": "中国气象局: 气象预警",
                 },
                 "OpenQuakeAPI": {
                     "global_quake": "Global Quake",
