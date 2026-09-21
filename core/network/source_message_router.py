@@ -639,24 +639,14 @@ class SourceMessageRouter:
             )
 
             try:
-                # 历史 protobuf 二进制帧仍按 Global Quake 路径处理
                 if isinstance(message, (bytes, bytearray)):
-                    if not self._is_source_routable("global_quake", "global_quake"):
+                    try:
+                        raw_text = message.decode("utf-8")
+                    except UnicodeDecodeError:
                         return
-                    await self._parse_and_dispatch(
-                        source_id="global_quake",
-                        source_label="global_quake",
-                        parser_input=message,
-                        connection_name=connection_name,
-                        connection_info=connection_info,
-                        source_channel="gq",
-                        parser_log_label="Global Quake",
-                    )
-                    return
-
-                raw_text = message if isinstance(message, str) else None
-                if raw_text is None:
-                    # 非文本/非二进制消息为混流常态，不逐一记录
+                elif isinstance(message, str):
+                    raw_text = message
+                else:
                     return
 
                 try:
