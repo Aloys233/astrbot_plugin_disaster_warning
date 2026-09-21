@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import re
+
 # 中国 34 个省级行政区简称（含港澳台），顺序参考常见行政区划排布。
 CHINA_PROVINCES: list[str] = [
     "北京",
@@ -227,7 +229,6 @@ def extract_province_from_adcode(adcode_or_id: str | int | None) -> str | None:
     s = str(adcode_or_id).strip()
     if not s:
         return None
-    import re
     m = re.match(r"^(\d{2})", s)
     if m:
         return ADCODE_PROVINCE_MAP.get(m.group(1))

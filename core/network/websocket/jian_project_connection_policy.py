@@ -15,6 +15,7 @@ from typing import Any
 
 import aiohttp
 from astrbot.api import logger
+from astrbot.api.star import StarTools
 
 # 连接组名称常量
 JIAN_PROJECT_PRIMARY_CONNECTION = "jian_project_all"
@@ -52,8 +53,6 @@ AUTH_ERROR_MESSAGES: dict[int, str] = {
 def get_jian_project_storage_path() -> Path:
     """获取 Jian Project 凭证持久化文件路径。"""
     try:
-        from astrbot.api.star import StarTools
-
         data_dir = StarTools.get_data_dir("astrbot_plugin_disaster_warning")
         if data_dir:
             p = Path(data_dir)

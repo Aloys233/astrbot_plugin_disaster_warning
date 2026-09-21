@@ -19,6 +19,9 @@ from ....utils.map_tile_sources import (
     normalize_map_source,
 )
 from ...network.websocket.fan_studio_connection_policy import ServerPreference
+from ...network.websocket.jian_project_connection_policy import (
+    jian_project_auth_service,
+)
 from ..snet.snet_filter_constants import (
     DEFAULT_MIN_SHINDO,
     DEFAULT_MIN_TRIGGERED_STATIONS,
@@ -1529,10 +1532,6 @@ class ConfigValidator:
                 jian_project_cfg.get("enabled")
                 and not str(jian_project_cfg.get("refresh_token", "")).strip()
             ):
-                from ...network.websocket.jian_project_connection_policy import (
-                    jian_project_auth_service,
-                )
-
                 if not jian_project_auth_service.has_valid_token():
                     logger.warning(
                         "[灾害预警] 配置警告: Jian Project WebSocket 数据源已启用但未配置登录密钥 (lk_...) 或长期 Token (rt_...)，"
