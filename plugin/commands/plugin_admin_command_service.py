@@ -568,11 +568,13 @@ class PluginAdminCommandService(CommandTelemetryMixin):
                     ("wolfx_all", "Wolfx"),
                     ("pancakes_api", "PancakesAPI"),
                     ("openquake_api", "PancakesAPI"),
+                    ("jian_project_all", "Jian Project"),
                 ]
             )
             source_group_label_map = OrderedDict(
                 [
                     ("fan_studio", "FAN Studio"),
+                    ("jian_project", "Jian Project"),
                     ("p2p_earthquake", "P2P地震情報"),
                     ("wolfx", "Wolfx"),
                     ("pancakes_api", "PancakesAPI"),
@@ -625,11 +627,30 @@ class PluginAdminCommandService(CommandTelemetryMixin):
                 },
                 "PancakesAPI": {
                     "global_quake": "Global Quake",
-                    "china_weather_alarm": "中国气象局: 气象预警",
+                    "japan_jma_eew": "日本气象厅: 紧急地震速报",
+                    "jma_pancakes": "日本气象厅: 紧急地震速报",
+                    "japan_jma_earthquake": "日本气象厅: 地震情报",
+                    "jma_eqlist_pancakes": "日本气象厅: 地震情报",
+                    "usgs_earthquake": "美国地质调查局 (USGS)",
+                    "usgs_pancakes": "美国地质调查局 (USGS)",
                 },
                 "OpenQuakeAPI": {
                     "global_quake": "Global Quake",
+                    "japan_jma_eew": "日本气象厅: 紧急地震速报",
+                    "jma_pancakes": "日本气象厅: 紧急地震速报",
+                    "japan_jma_earthquake": "日本气象厅: 地震情报",
+                    "jma_eqlist_pancakes": "日本气象厅: 地震情报",
+                    "usgs_earthquake": "美国地质调查局 (USGS)",
+                    "usgs_pancakes": "美国地质调查局 (USGS)",
+                },
+                "Jian Project": {
+                    "china_earthquake_warning": "中国地震预警网 (CEA)",
+                    "taiwan_cwa_earthquake": "台湾中央气象署: 强震即时警报",
+                    "japan_jma_eew": "日本气象厅: 紧急地震速报",
                     "china_weather_alarm": "中国气象局: 气象预警",
+                    "china_tsunami": "自然资源部海啸预警中心",
+                    "china_cenc_earthquake": "中国地震台网 (CENC)",
+                    "usgs_earthquake": "美国地质调查局 (USGS)",
                 },
                 "EQSC API": {
                     "typhoon": "中国气象局：实时活跃台风",

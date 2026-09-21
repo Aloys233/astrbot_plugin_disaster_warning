@@ -38,6 +38,7 @@ class DisasterServiceNoticeService:
         "wolfx_mixed": "wolfx_all",
         "pancakes_mixed": "pancakes_api",
         "openquake_mixed": "pancakes_api",
+        "jian_project_mixed": "jian_project_all",
         "jma_p2p": "p2p_main",
         "jma_p2p_info": "p2p_main",
         "jma_tsunami_p2p": "p2p_main",

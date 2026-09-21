@@ -259,6 +259,19 @@ function ConnectionsGrid() {
                 compact: true,
             },
             {
+                id: 'jian_project',
+                displayName: 'Jian Project',
+                matcher: (key) => {
+                    const k = String(key || '').toLowerCase();
+                    return (
+                        k === 'jian_project_all'
+                        || k === 'jian_project'
+                        || k.includes('jian_project')
+                        || k.includes('sismotide')
+                    );
+                },
+            },
+            {
                 id: 'eqsc',
                 displayName: 'EQSC API',
                 connectionType: 'http',
@@ -369,7 +382,6 @@ function ConnectionsGrid() {
                 sa_fanstudio: '美国 ShakeAlert 地震预警',
                 fssn_cmt_fanstudio: 'FSSN 矩心矩张量解 (CMT)',
                 china_weather_fanstudio: '中国气象局: 气象预警',
-                china_weather_openquake: '中国气象局: 气象预警',
                 china_tsunami_fanstudio: '自然资源部海啸预警中心',
                 jma_fanstudio: '日本气象厅: 紧急地震速报',
             },
@@ -396,15 +408,21 @@ function ConnectionsGrid() {
             },
             PancakesAPI: {
                 global_quake: 'Global Quake',
-                china_weather_alarm: '中国气象局: 气象预警',
-                china_weather_openquake: '中国气象局: 气象预警',
-                china_weather_pancakes: '中国气象局: 气象预警',
+                japan_jma_eew: '日本气象厅: 紧急地震速报',
+                jma_pancakes: '日本气象厅: 紧急地震速报',
+                japan_jma_earthquake: '日本气象厅: 地震情报',
+                jma_eqlist_pancakes: '日本气象厅: 地震情报',
+                usgs_earthquake: '美国地质调查局 (USGS)',
+                usgs_pancakes: '美国地质调查局 (USGS)',
             },
             OpenQuakeAPI: {
                 global_quake: 'Global Quake',
-                china_weather_alarm: '中国气象局: 气象预警',
-                china_weather_openquake: '中国气象局: 气象预警',
-                china_weather_pancakes: '中国气象局: 气象预警',
+                japan_jma_eew: '日本气象厅: 紧急地震速报',
+                jma_pancakes: '日本气象厅: 紧急地震速报',
+                japan_jma_earthquake: '日本气象厅: 地震情报',
+                jma_eqlist_pancakes: '日本气象厅: 地震情报',
+                usgs_earthquake: '美国地质调查局 (USGS)',
+                usgs_pancakes: '美国地质调查局 (USGS)',
             },
             'EQSC API': {
                 china_typhoon: '中国气象局：实时活跃台风',
@@ -414,6 +432,22 @@ function ConnectionsGrid() {
                 // EQSC HTTP 轮询的 CENC 烈度速报（与 FAN 独立 WS 并列）
                 china_cenc_intensity_report: '中国地震台网 (CENC) 烈度速报',
                 cenc_ir_eqsc: '中国地震台网 (CENC) 烈度速报',
+            },
+            'Jian Project': {
+                china_earthquake_warning: '中国地震预警网 (CEA)',
+                taiwan_cwa_earthquake: '台湾中央气象署: 强震即时警报',
+                japan_jma_eew: '日本气象厅: 紧急地震速报',
+                china_weather_alarm: '中国气象局: 气象预警',
+                china_tsunami: '自然资源部海啸预警中心',
+                china_cenc_earthquake: '中国地震台网 (CENC)',
+                usgs_earthquake: '美国地质调查局 (USGS)',
+                cea_jianproject: '中国地震预警网 (CEA)',
+                cwa_jianproject: '台湾中央气象署: 强震即时警报',
+                jma_jianproject: '日本气象厅: 紧急地震速报',
+                china_weather_jianproject: '中国气象局: 气象预警',
+                china_tsunami_jianproject: '自然资源部海啸预警中心',
+                cenc_jianproject: '中国地震台网 (CENC)',
+                usgs_jianproject: '美国地质调查局 (USGS)',
             },
         };
 

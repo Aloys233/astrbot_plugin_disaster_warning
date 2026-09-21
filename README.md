@@ -1081,11 +1081,13 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 
 #### 🔹 PancakesAPI
 
-- **原理**: 连接到 PancakesAPI 的 `/ws/all` 聚合端点，按 `source` 字段路由 Global Quake、中国气象局气象预警（CMA）等子源。
+- **原理**: 连接到 PancakesAPI 的 `/ws/all` 聚合端点，按 `source` 字段路由 Global Quake、JMA 紧急地震速报与情报、USGS 等子源。
 - **特点**: 在偏远地区或国际海域，由于官方机构反应时间较长，Global Quake 往往能最先提供初步数据，但震级和位置可能随报数更新而有较大波动。
 - **启用 (`enabled`)**: 控制 PancakesAPI 通道是否启用。关闭后所有 PancakesAPI 子源均不可用。
 - **Global Quake (`global_quake`)**: 获取 Global Quake 全球地震实时数据（这些数据是由全球数千个测站通过算法实时计算得出的，精度有限）。
-- **中国气象局气象预警 (`china_weather_alarm`)**: 接收中国气象局气象预警信息。
+- **日本气象厅紧急地震速报 (`japan_jma_eew`)**: 接收日本气象厅紧急地震速报（JMA EEW）。
+- **日本气象厅地震情报 (`japan_jma_earthquake`)**: 接收日本气象厅地震情报列表（JMA EQLIST）。
+- **USGS 地震测定 (`usgs_earthquake`)**: 接收美国地质调查局 (USGS) 地震测定数据。
 
 #### 🔹 EQSC API
 
@@ -1959,7 +1961,7 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 
 # --- 模拟气象预警事件 ---
 # 格式：/灾害预警模拟 <标题> <正文> [预警编码] [数据源]
-/灾害预警模拟 暴雨红色预警 预计未来3小时降雨量将达100毫米以上 11B0304 china_weather_openquake
+/灾害预警模拟 暴雨红色预警 预计未来3小时降雨量将达100毫米以上 11B0304 china_weather_fanstudio
 
 # --- 模拟台风事件 ---
 # 格式：/灾害预警模拟 <编号> <名称> [强度] [数据源]
@@ -1992,13 +1994,16 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 # cea_fanstudio      (中国地震预警网地震预警 - FAN)
 # cea_pr_fanstudio   (中国地震预警网地震预警 (省级) - FAN)
 # cea_wolfx          (中国地震预警网地震预警 - Wolfx)
+# cea_jianproject    (中国地震预警网地震预警 - Jian Project)
 # cenc_fanstudio     (中国地震台网地震情报 - FAN)
 # cenc_wolfx         (中国地震台网地震情报 - Wolfx)
+# cenc_jianproject   (中国地震台网地震测定 - Jian Project)
 # cenc_ir_fanstudio  (中国地震台网烈度速报 - FAN)
 # cenc_ir_eqsc       (中国地震台网烈度速报 - EQSC)
 # china_weather_fanstudio (中国气象局气象预警 - FAN)
-# china_weather_openquake (中国气象局气象预警 - PancakesAPI)
+# china_weather_jianproject (中国气象局气象预警 - Jian Project)
 # china_tsunami_fanstudio (自然资源部海啸预警中心 - FAN)
+# china_tsunami_jianproject (自然资源部海啸预警中心 - Jian Project)
 #
 # 中国台湾:
 # cwa_fanstudio      (台湾中央气象署地震预警 - FAN)

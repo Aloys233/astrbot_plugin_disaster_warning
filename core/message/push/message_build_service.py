@@ -231,10 +231,7 @@ class MessageBuildService:
             return flags
 
         # 6. 气象预警图标（缺省开；有预警编码才附加）
-        if (
-            source_id.startswith("china_weather")
-            or source_id in ("china_weather_openquake", "china_weather_pancakes")
-        ):
+        if source_id.startswith("china_weather"):
             weather_cfg = (
                 cfg.get("weather_config")
                 if isinstance(cfg.get("weather_config"), dict)

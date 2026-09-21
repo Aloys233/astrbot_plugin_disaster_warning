@@ -175,6 +175,7 @@ _CONNECTION_LABELS: dict[str, str] = {
     "wolfx_all": "Wolfx 数据源",
     "pancakes_api": "Pancakes API",
     "openquake_api": "Pancakes API",
+    "jian_project_all": "Jian Project 数据源",
 }
 
 # 轮询服务 gate_id -> 展示名（大屏轮询明细用）。

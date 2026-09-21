@@ -9,6 +9,11 @@ import time
 from datetime import datetime
 from typing import Any
 
+from ...utils.china_regions import (
+    extract_province_from_adcode,
+    province_short,
+    resolve_province_from_text,
+)
 from ...utils.plugin_logger import plugin_logger
 from ..domain.event_identity import EventIdentity
 from ..domain.event_models import EventEnvelope, WeatherEvent
@@ -20,7 +25,7 @@ from .base_parser import BaseParser
 class WeatherAlarmParser(BaseParser):
     """中国气象局气象预警解析器。
 
-    支持 FAN Studio 扁平载荷与 PancakesAPI RealtimeEvent 包装格式。
+    支持 FAN Studio、Jian Project 等气象数据源载荷格式。
     构造时按 source_id 区分数据源，各源维护独立的短窗去重队列，
     跨源不去重。
     """
@@ -127,6 +132,24 @@ class WeatherAlarmParser(BaseParser):
                 or ""
             ).strip()
 
+            # 解析并规范化地理归属（省份、城市、区县、adcode）
+            raw_province = str(msg_data.get("province") or "").strip()
+            raw_city = str(msg_data.get("city") or "").strip()
+            raw_district = str(msg_data.get("district") or "").strip()
+            raw_adcode = str(msg_data.get("adcode") or "").strip()
+
+            province = None
+            if raw_province:
+                province = province_short(raw_province)
+            if not province and raw_adcode:
+                province = extract_province_from_adcode(raw_adcode)
+            if not province and id_str:
+                province = extract_province_from_adcode(id_str)
+            if not province and title:
+                province = resolve_province_from_text(title)
+            if not province and headline:
+                province = resolve_province_from_text(headline)
+
             # 整合元数据
             metadata = {
                 "issue_time": issue_time,
@@ -135,6 +158,10 @@ class WeatherAlarmParser(BaseParser):
                 "type": weather_code,
                 "alert_code": weather_code,
                 "code": weather_code,
+                "province": province or "",
+                "city": raw_city,
+                "district": raw_district,
+                "adcode": raw_adcode,
                 "longitude": msg_data.get("longitude"),
                 "latitude": msg_data.get("latitude"),
                 "title": title,

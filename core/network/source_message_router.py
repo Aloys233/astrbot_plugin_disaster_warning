@@ -16,11 +16,13 @@ from ..services.telemetry.telemetry_utils import track_error_safely
 from ..sources.source_catalog import get_source_entry, get_source_ids_by_dispatch_family
 from ..sources.source_entry import ProviderFamily
 from ..sources.source_router import (
+    get_jian_project_source_id,
     get_openquake_source_id,
     get_pancakes_source_id,
     get_provider_source_map,
     get_wolfx_source_id,
     route_fan_studio_message,
+    route_jian_project_message,
 )
 from .websocket.websocket_manager import WebSocketManager
 
@@ -97,6 +99,7 @@ class SourceMessageRouter:
         ws_manager.register_handler("wolfx", self._create_wolfx_handler())
         ws_manager.register_handler("pancakes_api", self._create_pancakes_handler())
         ws_manager.register_handler("openquake_api", self._create_pancakes_handler())
+        ws_manager.register_handler("jian_project", self._create_jian_project_handler())
 
     async def _dispatch_event(
         self,
@@ -717,6 +720,97 @@ class SourceMessageRouter:
     # 向后兼容别名
     _create_openquake_handler = _create_pancakes_handler
 
+    def _create_jian_project_handler(self):
+        """创建 Jian Project 连接的消息处理器。"""
+
+        async def jian_project_handler(
+            message, connection_name=None, connection_info=None
+        ):
+            self._log_received_message(
+                "Jian Project",
+                message,
+                connection_name=connection_name,
+                connection_info=connection_info,
+            )
+
+            try:
+                try:
+                    data = json.loads(message)
+                except json.JSONDecodeError as error:
+                    plugin_logger.error(f"[灾害预警] Jian Project JSON解析失败: {error}")
+                    return None
+
+                if not isinstance(data, dict):
+                    return None
+
+                msg_type = str(data.get("type") or "").strip().lower()
+
+                # 心跳包：直接过滤
+                if msg_type in ("heartbeat", "pong"):
+                    return None
+
+                # 首帧全量快照包：通知静默协调器，并直接丢弃，不作为新灾害报警推送
+                if msg_type == "all":
+                    coordinator = getattr(self.service, "startup_silence", None)
+                    if coordinator is not None:
+                        try:
+                            coordinator.note_bootstrap_payload(
+                                connection_name=connection_name,
+                                kind="jian_project_initial_all",
+                            )
+                        except Exception as exc:
+                            plugin_logger.debug(
+                                f"[灾害预警] Jian Project initial_all 通知静默协调器失败: {exc}"
+                            )
+                    return None
+
+                # 路由增量单源消息
+                routed_messages = route_jian_project_message(data)
+                if not routed_messages:
+                    return None
+
+                for item in routed_messages:
+                    source_label = item.source_name
+                    source_id = item.source_id
+                    payload = item.payload
+
+                    if not self._is_source_routable(source_id, source_label):
+                        continue
+
+                    plugin_logger.info(
+                        f"[灾害预警] 处理 {source_label} 数据 ({_resolve_config_key(source_id)})",
+                        is_event_linked=True,
+                        event_stream=self._resolve_stream_by_source_id(source_id),
+                        is_silent_window=True,
+                    )
+                    await self._parse_and_dispatch(
+                        source_id=source_id,
+                        source_label=source_label,
+                        parser_input=payload,
+                        connection_name=connection_name,
+                        connection_info=connection_info,
+                        source_channel=source_label,
+                    )
+
+                return None
+            except Exception as error:
+                connection_uri = (
+                    connection_info.get("uri") if connection_info else "未知地址"
+                )
+                plugin_logger.error(
+                    f"[灾害预警] Jian Project 处理器处理来自 "
+                    f"{connection_name or '未知连接'} 的消息失败，"
+                    f"连接地址为 {connection_uri}，错误为 {error}",
+                    exc_info=True,
+                )
+                await self._track_router_error(
+                    error,
+                    module="core.source_message_router.jian_project_handler",
+                )
+                return None
+
+        return jian_project_handler
 
 
 __all__ = ["SourceMessageRouter"]
+

@@ -24,6 +24,10 @@ from .fan_studio_connection_policy import (
     send_fan_studio_auth,
     yield_secondary_for_primary,
 )
+from .jian_project_connection_policy import (
+    is_jian_project_connection,
+    jian_project_auth_service,
+)
 from .websocket_dispatch_service import WebSocketDispatchService
 from .websocket_reconnect_service import WebSocketReconnectService
 from .websocket_runtime_service import WebSocketRuntimeService
@@ -173,6 +177,48 @@ class WebSocketManager:
 
         websocket: ClientWebSocketResponse | None = None
         try:
+            # Jian Project：握手前使用登录密钥 (lk_...) 或长期 Token (rt_...) 换取短期 Access Token，
+            # 并在握手 URL 中追加 ?key=at_...，同时附带 X-API-Key 头。
+            if is_jian_project_connection(name):
+                configured_credential = (
+                    (connection_info or {}).get("credential")
+                    or (connection_info or {}).get("refresh_token")
+                    or (self.connection_info.get(name) or {}).get("credential")
+                    or (self.connection_info.get(name) or {}).get("refresh_token")
+                )
+                if not configured_credential:
+                    data_sources = self.config.get("data_sources")
+                    if isinstance(data_sources, dict):
+                        jp_cfg = data_sources.get("jian_project")
+                        if isinstance(jp_cfg, dict):
+                            configured_credential = str(
+                                jp_cfg.get("refresh_token")
+                                or jp_cfg.get("token")
+                                or jp_cfg.get("login_key")
+                                or ""
+                            ).strip()
+
+                try:
+                    access_token = await jian_project_auth_service.get_access_token(
+                        configured_credential=configured_credential,
+                        session=self.session,
+                        force_refresh=is_retry,
+                    )
+                except Exception as auth_err:
+                    logger.error(f"[灾害预警] Jian Project 鉴权换票失败: {auth_err}")
+                    self._handle_connection_error(name, uri, headers, auth_err)
+                    return
+
+                base_url = (connection_info or {}).get("base_url") or uri.split("?")[0]
+                uri = f"{base_url}?key={access_token}"
+                headers = dict(headers or {})
+                headers["X-API-Key"] = access_token
+                if connection_info is not None:
+                    connection_info["credential"] = configured_credential
+                    connection_info["refresh_token"] = configured_credential
+                    connection_info["access_token"] = access_token
+                    connection_info["base_url"] = base_url
+
             # 记录连接参数以便重连或状态上报
             preserved_info = self.connection_info.get(name, {})
             merged_info = {
@@ -327,6 +373,8 @@ class WebSocketManager:
 
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             # 常见网络错误或握手超时，走重试容灾逻辑
+            if is_jian_project_connection(name):
+                jian_project_auth_service.invalidate_token()
             logger.warning(f"[灾害预警] 连接中断或失败 {name}: {e}")
             await self._apply_fan_quota_policy_on_error(name, e)
             self._handle_connection_error(name, uri, headers, e)
