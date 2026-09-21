@@ -7,38 +7,50 @@ from __future__ import annotations
 
 # 导入所有具体的解析器子类
 from ..sources.source_catalog import SOURCE_CATALOG, get_source_entry
-from .china_earthquake_parser import CencEarthquakeParser, CencEarthquakeWolfxParser
-from .china_eew_parser import CEAEEWParser, CEAEEWPRParser, CEAEEWWolfxParser
+from .china_earthquake_parser import (
+    CencEarthquakeJianProjectParser,
+    CencEarthquakeParser,
+    CencEarthquakeWolfxParser,
+)
+from .china_eew_parser import (
+    CEAEEWParser,
+    CEAEEWPRParser,
+    CEAEEWWolfxParser,
+    CeaEewJianProjectParser,
+)
 from .china_intensity_report_eqsc_parser import CencIntensityReportEqscParser
 from .china_intensity_report_parser import CencIntensityReportParser
 from .fssn_cmt_parser import FssnCmtParser
 from .global_sources_parser import (
     GlobalQuakeParser,
     ShakeAlertEewParser,
-    UsgsEarthquakeParser,
-)
-from .japan_earthquake_parser import JmaEarthquakeP2PParser, JmaEarthquakeWolfxParser
-from .japan_eew_parser import JmaEewFanStudioParser, JmaEewP2PParser, JmaEewWolfxParser
-from .jian_project_parser import (
-    CeaEewJianProjectParser,
-    CencEarthquakeJianProjectParser,
-    ChinaTsunamiJianProjectParser,
-    CwaEewJianProjectParser,
-    JmaEewJianProjectParser,
     UsgsEarthquakeJianProjectParser,
-    WeatherAlarmJianProjectParser,
-)
-from .pancakes_parser import (
-    JmaEewPancakesParser,
-    JmaEqlistPancakesParser,
+    UsgsEarthquakeParser,
     UsgsPancakesParser,
+)
+from .japan_earthquake_parser import (
+    JmaEarthquakeP2PParser,
+    JmaEarthquakeWolfxParser,
+    JmaEqlistPancakesParser,
+)
+from .japan_eew_parser import (
+    JmaEewFanStudioParser,
+    JmaEewJianProjectParser,
+    JmaEewP2PParser,
+    JmaEewPancakesParser,
+    JmaEewWolfxParser,
 )
 from .snet_parser import SnetParser
 from .taiwan_earthquake_parser import CwaReportParser
-from .taiwan_eew_parser import CwaEewParser, CwaEewWolfxParser
-from .tsunami_parser import JmaTsunamiEqscParser, JmaTsunamiP2PParser, TsunamiParser
+from .taiwan_eew_parser import CwaEewJianProjectParser, CwaEewParser, CwaEewWolfxParser
+from .tsunami_parser import (
+    ChinaTsunamiJianProjectParser,
+    JmaTsunamiEqscParser,
+    JmaTsunamiP2PParser,
+    TsunamiParser,
+)
 from .typhoon_parser import TyphoonParser
-from .weather_parser import WeatherAlarmParser
+from .weather_parser import WeatherAlarmJianProjectParser, WeatherAlarmParser
 
 # 静态映射：配置中的解析器名(parser_name) -> 数据源解析器类(Parser Class)
 PARSER_CLASS_BY_NAME = {
