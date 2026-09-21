@@ -827,10 +827,20 @@ class UsgsPancakesParser(BaseParser):
 
             latitude = safe_float_convert(msg_data.get("latitude")) or 0.0
             longitude = safe_float_convert(msg_data.get("longitude")) or 0.0
-            raw_place_name = str(msg_data.get("placeName") or msg_data.get("place_name") or "").strip()
+            # Pancakes 地震载荷用 region 承载震中地名；placeName 仅作历史形态兜底
+            raw_place_name = str(
+                msg_data.get("region")
+                or msg_data.get("placeName")
+                or msg_data.get("place_name")
+                or ""
+            ).strip()
             info_type = str(msg_data.get("infoType") or msg_data.get("infoTypeName") or "").strip()
             magnitude_type = str(msg_data.get("magnitudeType") or "").strip()
             url = str(msg_data.get("url") or "").strip()
+
+            # MMI 烈度（罗马数字 I–XII）转数值，供展示层按 mmi 制式呈现
+            intensity_raw = str(msg_data.get("intensity") or "").strip()
+            intensity = ScaleConverter.convert_roman_intensity(intensity_raw)
 
             # 地名中英翻译
             place_name = region_service.translate_place_name(
@@ -843,7 +853,13 @@ class UsgsPancakesParser(BaseParser):
             origin_time_raw = msg_data.get("originTimeMs") or msg_data.get("originTimeIso") or msg_data.get("originTime")
             occurred_at = TimeConverter.parse_datetime(origin_time_raw) or datetime.now(timezone.utc)
 
-            updated_time_raw = msg_data.get("updatedTimeMs") or msg_data.get("updatedTimeIso") or msg_data.get("updatedTime")
+            # 发布时间取最近更新时间 lastUpdateMs；updatedTime* 仅作历史形态兜底
+            updated_time_raw = (
+                msg_data.get("lastUpdateMs")
+                or msg_data.get("updatedTimeMs")
+                or msg_data.get("updatedTimeIso")
+                or msg_data.get("updatedTime")
+            )
             published_at = TimeConverter.parse_datetime(updated_time_raw) or occurred_at
 
             source_entry = get_source_entry(self.source_id)
@@ -865,6 +881,7 @@ class UsgsPancakesParser(BaseParser):
                 place_name=place_name,
                 magnitude=magnitude,
                 depth=depth,
+                intensity=intensity,
                 metadata=dict(metadata),
             )
 
