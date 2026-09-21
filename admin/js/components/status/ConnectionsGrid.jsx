@@ -3,15 +3,15 @@ const { useMemo, useState, useCallback } = React;
 
 /**
  * 连接状态网格组件 (ConnectionsGrid)
- * 显示主流数据源（FAN Studio / P2P / Wolfx / PancakesAPI）与 HTTP 辅助通道
+ * 显示主流数据源（FAN Studio / P2P / Wolfx / PancakesAPI / Jian Project）与 HTTP 辅助通道
  * （EQSC API、NIED S-Net）的实时连接状态、协议信息及子源分布。
  *
  * 布局策略：
- * - 大屏（>= 1280px）：固定 5 列均匀分布
- * - - 第 1 列：FAN Studio
- * - - 第 2 列：FAN Studio 烈度速报（独立 WS）
- * - - 第 3 列：P2P 地震情报
- * - - 第 4 列：Wolfx
+ * - 大屏（>= 1024px）：固定 5 列均匀分布
+ * - - 第 1 列：FAN Studio（卡片背面为烈度速报独立 WS）
+ * - - 第 2 列：P2P 地震情报 + NIED S-Net 上下堆叠
+ * - - 第 3 列：Wolfx
+ * - - 第 4 列：Jian Project
  * - - 第 5 列：PancakesAPI + EQSC API 上下堆叠（EQSC 为 HTTP 轮询模式）
  * 延迟评级：
  * - < 150ms  fast (绿色)
@@ -322,18 +322,27 @@ function ConnectionsGrid() {
             };
         }
 
-        normalized[0] = {
-            ...normalized[0],
+        // 按 id 建立展示模型索引：列布局直接按 id 取用，
+        // 避免与 targets 数组下标耦合（新增数据源时下标漂移会静默丢卡片）。
+        const connById = {};
+        normalized.forEach((conn) => {
+            connById[conn.id] = conn;
+        });
+
+        connById.fan = {
+            ...connById.fan,
             flippable: true,
             flipSide: intensityConn,
         };
 
-        // 第 2 列：P2P 上 + S-Net 下；第 4 列：GQ 上 + EQSC 下
+        // 第 1 列 FAN；第 2 列 P2P + S-Net；第 3 列 Wolfx；
+        // 第 4 列 Jian Project；第 5 列 PancakesAPI + EQSC
         return [
-            { type: 'single', items: [normalized[0]] },
-            { type: 'stack', items: [normalized[1], normalized[2]] },
-            { type: 'single', items: [normalized[3]] },
-            { type: 'stack', items: [normalized[4], normalized[5]] },
+            { type: 'single', items: [connById.fan] },
+            { type: 'stack', items: [connById.p2p, connById.snet] },
+            { type: 'single', items: [connById.wolfx] },
+            { type: 'single', items: [connById.jian_project] },
+            { type: 'stack', items: [connById.gq, connById.eqsc] },
         ];
     }, [connections, isFanPrimaryConnectionKey, isFanIntensityConnectionKey, INTENSITY_SUB_SOURCE_KEYS]);
 
@@ -715,7 +724,7 @@ function ConnectionsGrid() {
         );
     };
 
-    // 骨架屏：第 1/3 列单卡，第 2/4 列双卡堆叠（P2P+S-Net / GQ+EQSC）
+    // 骨架屏：第 1/3/4 列单卡，第 2/5 列双卡堆叠（P2P+S-Net / PancakesAPI+EQSC）
     if (!dataLoaded) {
         return (
             <div className="connections-grid status-connections-grid">
@@ -737,6 +746,14 @@ function ConnectionsGrid() {
                             <div className="skeleton status-skeleton-subtitle status-skeleton-subtitle--short"></div>
                         </div>
                     ))}
+                </div>
+                <div className="status-connection-skeleton-card">
+                    <div className="status-skeleton-row">
+                        <div className="skeleton status-skeleton-title"></div>
+                        <div className="skeleton status-skeleton-badge"></div>
+                    </div>
+                    <div className="skeleton status-skeleton-subtitle"></div>
+                    <div className="skeleton status-skeleton-subtitle status-skeleton-subtitle--short"></div>
                 </div>
                 <div className="status-connection-skeleton-card">
                     <div className="status-skeleton-row">
