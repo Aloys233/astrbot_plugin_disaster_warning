@@ -1496,7 +1496,7 @@ class ConfigValidator:
                         )
                     fan_studio_cfg["fan_server_preference"] = normalized
 
-        # 校验 Jian Project 数据源配置（组总闸 + refresh_token + 7 大子源开关）
+        # 校验 Jian Project 数据源配置（组总闸 + login_key + 7 大子源开关）
         jian_project_cfg = cfg.get("jian_project")
         if isinstance(jian_project_cfg, dict):
             ConfigValidator._ensure_bool(jian_project_cfg, "enabled", False)
@@ -1513,24 +1513,20 @@ class ConfigValidator:
                     jian_project_cfg[sub_key] = True
                 ConfigValidator._ensure_bool(jian_project_cfg, sub_key, True)
 
-            raw_token = (
-                jian_project_cfg.get("refresh_token")
-                or jian_project_cfg.get("token")
-                or jian_project_cfg.get("login_key")
-            )
+            raw_token = jian_project_cfg.get("login_key")
             if raw_token is None:
-                jian_project_cfg["refresh_token"] = ""
+                jian_project_cfg["login_key"] = ""
             elif not isinstance(raw_token, str):
                 logger.warning(
                     "[灾害预警] 配置警告: Jian Project 凭证类型错误，已重置为空。"
                 )
-                jian_project_cfg["refresh_token"] = ""
+                jian_project_cfg["login_key"] = ""
             else:
-                jian_project_cfg["refresh_token"] = raw_token.strip()
+                jian_project_cfg["login_key"] = raw_token.strip()
 
             if (
                 jian_project_cfg.get("enabled")
-                and not str(jian_project_cfg.get("refresh_token", "")).strip()
+                and not str(jian_project_cfg.get("login_key", "")).strip()
             ):
                 if not jian_project_auth_service.has_valid_token():
                     logger.warning(

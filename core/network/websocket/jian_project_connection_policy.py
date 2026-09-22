@@ -358,15 +358,10 @@ def attach_jian_project_auth_from_plan(
     connection_info: dict[str, Any],
     conn_config: dict[str, Any],
 ) -> None:
-    """把连接计划中的 Jian Project 鉴权字段写入 connection_info 上下文。"""
-    credential = str(
-        conn_config.get("credential")
-        or conn_config.get("refresh_token")
-        or ""
-    ).strip()
+    """把连接计划中的 Jian Project 鉴权凭证写入 connection_info 上下文。"""
+    credential = str(conn_config.get("credential") or "").strip()
     if credential:
         connection_info["credential"] = credential
-        connection_info["refresh_token"] = credential
     base_url = str(conn_config.get("url") or JIAN_PROJECT_DEFAULT_WS_URL).strip()
     connection_info["base_url"] = base_url
 
