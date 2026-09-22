@@ -208,7 +208,6 @@ def get_pancakes_source_id(source_name: str | None) -> str | None:
 get_openquake_source_id = get_pancakes_source_id
 
 
-
 def detect_fan_studio_source_entry(data: dict[str, Any]) -> SourceEntry | None:
     """根据消息载荷特征识别 FAN Studio 注册项。"""
     if not isinstance(data, dict):

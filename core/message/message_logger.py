@@ -6,6 +6,7 @@
 避免原始数据日志无限膨胀或充斥无意义噪声。
 """
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any

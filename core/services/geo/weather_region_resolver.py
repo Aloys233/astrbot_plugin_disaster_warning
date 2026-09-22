@@ -16,7 +16,6 @@ from typing import Any
 from astrbot.api import logger
 
 from ....utils.china_regions import (
-    CHINA_PROVINCES,
     extract_province_from_adcode,
     province_short,
     resolve_province_from_text,
@@ -130,7 +129,7 @@ class _LocalChinaRegionsDb:
             return
 
         try:
-            with open(abs_path, "r", encoding="utf-8") as f:
+            with open(abs_path, encoding="utf-8") as f:
                 data = json.load(f)
 
             self.code_map = data.get("codeMap", {})
@@ -176,7 +175,10 @@ class _LocalChinaRegionsDb:
                     # 与省级名称同名的市/区/县（如直辖市行）不参与市县级映射
                     if place in province_level_names:
                         continue
-                    if place in self.place_to_province and self.place_to_province[place] != prov:
+                    if (
+                        place in self.place_to_province
+                        and self.place_to_province[place] != prov
+                    ):
                         conflict_places.add(place)
                     else:
                         self.place_to_province[place] = prov
@@ -184,11 +186,14 @@ class _LocalChinaRegionsDb:
                     # 剥离"市/区/县/旗/盟/州"后缀作为次级检索项
                     for sfx in ("市", "区", "县", "旗", "盟", "州"):
                         if place.endswith(sfx) and len(place) > 2:
-                            base_name = place[:-len(sfx)]
+                            base_name = place[: -len(sfx)]
                             # 剥离后与省级名称同名时保留省级条目（如「河北区」→「河北」）
                             if base_name in province_level_names:
                                 continue
-                            if base_name in self.place_to_province and self.place_to_province[base_name] != prov:
+                            if (
+                                base_name in self.place_to_province
+                                and self.place_to_province[base_name] != prov
+                            ):
                                 conflict_places.add(base_name)
                             else:
                                 self.place_to_province[base_name] = prov
@@ -257,7 +262,7 @@ class _LocalChinaRegionsDb:
         # 尝试剥离功能区尾缀做受控退化
         for sfx in _FUNCTIONAL_ZONE_SUFFIXES:
             if name.endswith(sfx) and len(name) > len(sfx):
-                base = name[:-len(sfx)]
+                base = name[: -len(sfx)]
                 prov = self.place_to_province.get(base)
                 if prov:
                     return province_short(prov)
@@ -299,7 +304,9 @@ class WeatherRegionResolver:
             return True
         if any(pattern.search(place) for pattern in _NOISE_PATTERNS):
             return True
-        if re.fullmatch(r"(?:东部|西部|南部|北部|中部|局部|大部|部分|上游|下游)", place):
+        if re.fullmatch(
+            r"(?:东部|西部|南部|北部|中部|局部|大部|部分|上游|下游)", place
+        ):
             return True
         return False
 

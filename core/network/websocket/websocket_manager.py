@@ -183,10 +183,9 @@ class WebSocketManager:
             # Jian Project：握手前使用登录密钥 (lk_...) 或长期 Token (rt_...) 换取短期 Access Token，
             # 令牌同时通过 ?key= 与 X-API-Key 头携带。
             if is_jian_project_connection(name):
-                configured_credential = (
-                    (connection_info or {}).get("credential")
-                    or (self.connection_info.get(name) or {}).get("credential")
-                )
+                configured_credential = (connection_info or {}).get("credential") or (
+                    self.connection_info.get(name) or {}
+                ).get("credential")
                 if not configured_credential:
                     data_sources = self.config.get("data_sources")
                     if isinstance(data_sources, dict):

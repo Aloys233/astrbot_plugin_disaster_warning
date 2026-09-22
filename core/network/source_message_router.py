@@ -16,8 +16,6 @@ from ..services.telemetry.telemetry_utils import track_error_safely
 from ..sources.source_catalog import get_source_entry, get_source_ids_by_dispatch_family
 from ..sources.source_entry import ProviderFamily
 from ..sources.source_router import (
-    get_jian_project_source_id,
-    get_openquake_source_id,
     get_pancakes_source_id,
     get_provider_source_map,
     get_wolfx_source_id,
@@ -623,9 +621,7 @@ class SourceMessageRouter:
         当前已接入 Global Quake（gq）与中国气象局气象预警（cma），其余 source 先忽略以便后续继续接入。
         """
 
-        async def pancakes_handler(
-            message, connection_name=None, connection_info=None
-        ):
+        async def pancakes_handler(message, connection_name=None, connection_info=None):
             self._log_received_message(
                 "PancakesAPI",
                 message,
@@ -727,7 +723,9 @@ class SourceMessageRouter:
                 try:
                     data = json.loads(message)
                 except json.JSONDecodeError as error:
-                    plugin_logger.error(f"[灾害预警] Jian Project JSON解析失败: {error}")
+                    plugin_logger.error(
+                        f"[灾害预警] Jian Project JSON解析失败: {error}"
+                    )
                     return None
 
                 if not isinstance(data, dict):
@@ -803,4 +801,3 @@ class SourceMessageRouter:
 
 
 __all__ = ["SourceMessageRouter"]
-

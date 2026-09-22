@@ -10,6 +10,7 @@ from datetime import datetime
 
 from astrbot.api import logger
 
+from ....utils.china_regions import province_short
 from ...domain.event_models import (
     EarthquakeEvent,
     EventEnvelope,
@@ -23,7 +24,6 @@ from ...message.presenters.weather_constants import (
     SORTED_WEATHER_TYPES,
 )
 from ...services.identity.event_classifier import is_major_event
-from ....utils.china_regions import province_short
 from ..source_compat import is_earthquake_supplement_product
 from .typhoon_stats_accumulator import record_typhoon_observation
 

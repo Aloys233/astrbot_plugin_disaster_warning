@@ -303,7 +303,9 @@ class WeatherAlarmParser(BaseParser):
 class WeatherAlarmJianProjectParser(BaseParser):
     """中国气象局气象预警解析器 - Jian Project。"""
 
-    def __init__(self, message_logger=None, source_id: str = "china_weather_jianproject"):
+    def __init__(
+        self, message_logger=None, source_id: str = "china_weather_jianproject"
+    ):
         super().__init__(source_id, message_logger)
         self._processed_weather_ids: dict[str, float] = {}
         self._WEATHER_DEDUPE_WINDOW_SECONDS = 600
@@ -326,7 +328,9 @@ class WeatherAlarmJianProjectParser(BaseParser):
             return
         self._processed_weather_ids[weather_id] = datetime.now(timezone.utc).timestamp()
         if len(self._processed_weather_ids) >= self._WEATHER_DEDUPE_MAX_ENTRIES:
-            oldest_key = min(self._processed_weather_ids, key=self._processed_weather_ids.get)
+            oldest_key = min(
+                self._processed_weather_ids, key=self._processed_weather_ids.get
+            )
             self._processed_weather_ids.pop(oldest_key, None)
 
     def _parse_data(self, data: dict[str, Any]) -> EventEnvelope | None:
@@ -355,7 +359,9 @@ class WeatherAlarmJianProjectParser(BaseParser):
                 return None
 
             origin_time_raw = msg_data.get("originTime")
-            issue_time = TimeConverter.parse_datetime(origin_time_raw) or datetime.now(timezone.utc)
+            issue_time = TimeConverter.parse_datetime(origin_time_raw) or datetime.now(
+                timezone.utc
+            )
             relieve_time = TimeConverter.parse_datetime(msg_data.get("relieveTime"))
             weather_code = str(msg_data.get("type") or "").strip()
 
@@ -393,8 +399,12 @@ class WeatherAlarmJianProjectParser(BaseParser):
                 "headline": headline,
                 "description": description,
                 "source_family": "jian_project",
-                "source_enum": source_entry.source_enum if source_entry else "jian_project_weather",
-                "source_type": source_entry.source_type.value if source_entry else "weather",
+                "source_enum": source_entry.source_enum
+                if source_entry
+                else "jian_project_weather",
+                "source_type": source_entry.source_type.value
+                if source_entry
+                else "weather",
             }
 
             domain_event = WeatherEvent(
@@ -408,12 +418,20 @@ class WeatherAlarmJianProjectParser(BaseParser):
                 event_id=weather_id,
                 source_id=self.source_id,
                 event_type="weather_alarm",
-                provider_family=source_entry.provider_family.value if source_entry else "jian_project",
-                source_enum=source_entry.source_enum if source_entry else "jian_project_weather",
+                provider_family=source_entry.provider_family.value
+                if source_entry
+                else "jian_project",
+                source_enum=source_entry.source_enum
+                if source_entry
+                else "jian_project_weather",
                 published_at=issue_time,
                 attributes={
-                    "parser_name": self.source_entry.parser_name if self.source_entry else "weather_alarm_parser",
-                    "config_key": source_entry.config_key if source_entry else "china_weather_alarm",
+                    "parser_name": self.source_entry.parser_name
+                    if self.source_entry
+                    else "weather_alarm_parser",
+                    "config_key": source_entry.config_key
+                    if source_entry
+                    else "china_weather_alarm",
                 },
             )
 
@@ -423,7 +441,9 @@ class WeatherAlarmJianProjectParser(BaseParser):
                 received_at=datetime.now(timezone.utc),
                 payload=SourcePayload(
                     source_id=self.source_id,
-                    provider_family=source_entry.provider_family.value if source_entry else "jian_project",
+                    provider_family=source_entry.provider_family.value
+                    if source_entry
+                    else "jian_project",
                     message_type="weather",
                     raw=dict(msg_data),
                     attributes=dict(metadata),
@@ -439,6 +459,7 @@ class WeatherAlarmJianProjectParser(BaseParser):
                 f"[灾害预警] 气象预警解析成功: {domain_event.title or domain_event.headline}, 时间: {issue_time}",
                 is_event_linked=True,
                 event_stream="weather_alarm",
+                is_silent_window=True,
             )
             return envelope
         except Exception as exc:
