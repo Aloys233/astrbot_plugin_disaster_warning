@@ -24,6 +24,10 @@ from .fan_studio_connection_policy import (
     send_fan_studio_auth,
     yield_secondary_for_primary,
 )
+from .jian_project_connection_policy import (
+    is_jian_project_connection,
+    jian_project_auth_service,
+)
 from .websocket_dispatch_service import WebSocketDispatchService
 from .websocket_reconnect_service import WebSocketReconnectService
 from .websocket_runtime_service import WebSocketRuntimeService
@@ -173,6 +177,48 @@ class WebSocketManager:
 
         websocket: ClientWebSocketResponse | None = None
         try:
+            # 握手地址默认与上报地址一致；Jian Project 需要额外拼入短期访问令牌。
+            connect_uri = uri
+
+            # Jian Project：握手前使用登录密钥 (lk_...) 或长期 Token (rt_...) 换取短期 Access Token，
+            # 令牌同时通过 ?key= 与 X-API-Key 头携带。
+            if is_jian_project_connection(name):
+                configured_credential = (
+                    (connection_info or {}).get("credential")
+                    or (self.connection_info.get(name) or {}).get("credential")
+                )
+                if not configured_credential:
+                    data_sources = self.config.get("data_sources")
+                    if isinstance(data_sources, dict):
+                        jp_cfg = data_sources.get("jian_project")
+                        if isinstance(jp_cfg, dict):
+                            configured_credential = str(
+                                jp_cfg.get("login_key") or ""
+                            ).strip()
+
+                try:
+                    access_token = await jian_project_auth_service.get_access_token(
+                        configured_credential=configured_credential,
+                        session=self.session,
+                        force_refresh=is_retry,
+                    )
+                except Exception as auth_err:
+                    logger.error(f"[灾害预警] Jian Project 鉴权换票失败: {auth_err}")
+                    self._handle_connection_error(name, uri, headers, auth_err)
+                    return
+
+                base_url = (connection_info or {}).get("base_url") or uri.split("?")[0]
+                # 含令牌的地址只用于本次握手：连接状态、事件元数据与错误日志
+                # 一律使用不含令牌的 base_url，避免短期访问令牌被写入
+                # 管理端响应、事件 metadata 与日志文件（CWE-532）。
+                connect_uri = f"{base_url}?key={access_token}"
+                uri = base_url
+                headers = dict(headers or {})
+                headers["X-API-Key"] = access_token
+                if connection_info is not None:
+                    connection_info["credential"] = configured_credential
+                    connection_info["base_url"] = base_url
+
             # 记录连接参数以便重连或状态上报
             preserved_info = self.connection_info.get(name, {})
             merged_info = {
@@ -182,9 +228,16 @@ class WebSocketManager:
             # 避免把旧会话的离线标记带进新连接元数据
             merged_info.pop("offline_since", None)
             merged_info.pop("short_retry_notified", None)
+            # Jian Project 的短期访问令牌每次建连都会重新换取并覆盖，
+            # 因此只随本次握手使用，不常驻 connection_info。
+            stored_headers = headers
+            if is_jian_project_connection(name) and isinstance(headers, dict):
+                stored_headers = {
+                    key: value for key, value in headers.items() if key != "X-API-Key"
+                }
             self.connection_info[name] = {
                 "uri": uri,
-                "headers": headers,
+                "headers": stored_headers,
                 "connection_type": "websocket",
                 "established_time": None,
                 "retry_count": 0,
@@ -202,7 +255,7 @@ class WebSocketManager:
             # 统一配置建连的超时时间及负载限制
             conn_timeout = self.config.get("connection_timeout", 30)
             connect_kwargs = {
-                "url": uri,
+                "url": connect_uri,
                 "headers": headers or {},
                 "heartbeat": self.config.get("heartbeat_interval", 60),
                 "timeout": conn_timeout,  # aiohttp 握手超时限制
@@ -327,6 +380,8 @@ class WebSocketManager:
 
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             # 常见网络错误或握手超时，走重试容灾逻辑
+            if is_jian_project_connection(name):
+                jian_project_auth_service.invalidate_token()
             logger.warning(f"[灾害预警] 连接中断或失败 {name}: {e}")
             await self._apply_fan_quota_policy_on_error(name, e)
             self._handle_connection_error(name, uri, headers, e)

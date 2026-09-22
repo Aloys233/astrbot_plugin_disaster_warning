@@ -67,7 +67,7 @@ class PluginCommandSupportService:
             "apikey",
             "private_key",
             "access_key",
-            "refresh_token",
+            "login_key",
             "playwright_server_url",
         }
     )

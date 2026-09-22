@@ -836,6 +836,11 @@ class UsgsEarthquakePresenter(BasePresenter):
             lines.append(f"📊震级：M {data.magnitude:.1f}")
         if data.depth is not None:
             lines.append(f"🏔️深度：{cls._format_depth(data.depth)}")
+        # FAN Studio 的 USGS 载荷无烈度字段（intensity_mode=magnitude），
+        # 仅 PancakesAPI 的 USGS 源会带 MMI 烈度，缺失时自动跳过。
+        if data.intensity is not None:
+            emoji = _get_intensity_emoji(data.intensity, is_eew=False, is_shindo=False)
+            lines.append(f"💥最大烈度：{data.intensity} {emoji}")
         return "\n".join(lines)
 
     @classmethod

@@ -152,17 +152,17 @@
    ========================================================================== */
 .status-connections-grid {
     display: grid;
-    /* 固定 4 列：第 2 列 P2P+S-Net，第 4 列 GQ+EQSC 上下堆叠 */
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    /* 固定 5 列：第 2 列 P2P+S-Net，第 5 列 PancakesAPI+EQSC 上下堆叠 */
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 16px;
     align-items: stretch;
 }
 
 .status-connections-grid.connections-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
-/* 堆叠列：P2P+S-Net / GQ+EQSC 共享高度 */
+/* 堆叠列：P2P+S-Net / PancakesAPI+EQSC 共享高度 */
 .connection-stack {
     display: flex;
     flex-direction: column;

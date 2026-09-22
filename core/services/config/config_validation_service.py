@@ -19,6 +19,9 @@ from ....utils.map_tile_sources import (
     normalize_map_source,
 )
 from ...network.websocket.fan_studio_connection_policy import ServerPreference
+from ...network.websocket.jian_project_connection_policy import (
+    jian_project_auth_service,
+)
 from ..snet.snet_filter_constants import (
     DEFAULT_MIN_SHINDO,
     DEFAULT_MIN_TRIGGERED_STATIONS,
@@ -1364,16 +1367,21 @@ class ConfigValidator:
         if not isinstance(cfg, dict):
             return cfg
 
-        # OpenQuakeAPI 配置组更名：旧 key "global_quake" → 新 key "openquake_api"。
+        # PancakesAPI 配置组更名：旧 key "global_quake" / "openquake_api" → 新 key "pancakes_api"。
         # 仅做复制迁移，保留旧 key 避免破坏未知扩展；新 key 优先。
-        if "openquake_api" not in cfg and "global_quake" in cfg:
-            cfg["openquake_api"] = cfg["global_quake"]
+        if "pancakes_api" not in cfg:
+            if "openquake_api" in cfg:
+                cfg["pancakes_api"] = cfg["openquake_api"]
+            elif "global_quake" in cfg:
+                cfg["pancakes_api"] = cfg["global_quake"]
 
         # 确保主要分类存在且为字典，规避非字典类型在运行时发生键提取错误
         for key in [
             "fan_studio",
+            "jian_project",
             "p2p_earthquake",
             "wolfx",
+            "pancakes_api",
             "openquake_api",
             "snet",
         ]:
@@ -1387,18 +1395,21 @@ class ConfigValidator:
                     # 仅确保 enabled 为 bool，其他字段保持原样以支持扩展（如 API Key 等字符串配置）
                     ConfigValidator._ensure_bool(cfg[key], "enabled", True)
 
-        # OpenQuakeAPI：组总闸 + Global Quake 子源开关 + CMA 气象预警子源开关
+        # PancakesAPI：组总闸 + Global Quake / JMA / USGS 子源开关
         # 旧配置仅有 enabled 时，将子源开关回填为 enabled 的值，避免升级后静默关闭。
-        gq_cfg = cfg.get("openquake_api")
-        if isinstance(gq_cfg, dict):
-            ConfigValidator._ensure_bool(gq_cfg, "enabled", True)
-            if "global_quake" not in gq_cfg:
-                gq_cfg["global_quake"] = bool(gq_cfg.get("enabled", True))
-            ConfigValidator._ensure_bool(gq_cfg, "global_quake", True)
-            # CMA 气象预警子源：默认 true（高优先级源）
-            if "china_weather_alarm" not in gq_cfg:
-                gq_cfg["china_weather_alarm"] = bool(gq_cfg.get("enabled", True))
-            ConfigValidator._ensure_bool(gq_cfg, "china_weather_alarm", True)
+        pc_cfg = cfg.get("pancakes_api")
+        if isinstance(pc_cfg, dict):
+            ConfigValidator._ensure_bool(pc_cfg, "enabled", True)
+            if "global_quake" not in pc_cfg:
+                pc_cfg["global_quake"] = bool(pc_cfg.get("enabled", True))
+            ConfigValidator._ensure_bool(pc_cfg, "global_quake", True)
+            # CMA 气象预警已从 PancakesAPI 移除，清理遗留键
+            pc_cfg.pop("china_weather_alarm", None)
+
+            for sub_key in ("japan_jma_eew", "japan_jma_earthquake", "usgs_earthquake"):
+                if sub_key not in pc_cfg:
+                    pc_cfg[sub_key] = bool(pc_cfg.get("enabled", True))
+                ConfigValidator._ensure_bool(pc_cfg, sub_key, True)
 
         # S-Net 轮询间隔校验
         snet_cfg = cfg.get("snet")
@@ -1484,6 +1495,44 @@ class ConfigValidator:
                             f"（{raw_pref}），已重置为默认值。"
                         )
                     fan_studio_cfg["fan_server_preference"] = normalized
+
+        # 校验 Jian Project 数据源配置（组总闸 + login_key + 7 大子源开关）
+        jian_project_cfg = cfg.get("jian_project")
+        if isinstance(jian_project_cfg, dict):
+            ConfigValidator._ensure_bool(jian_project_cfg, "enabled", False)
+            for sub_key in (
+                "china_earthquake_warning",
+                "taiwan_cwa_earthquake",
+                "japan_jma_eew",
+                "china_weather_alarm",
+                "china_tsunami",
+                "china_cenc_earthquake",
+                "usgs_earthquake",
+            ):
+                if sub_key not in jian_project_cfg:
+                    jian_project_cfg[sub_key] = True
+                ConfigValidator._ensure_bool(jian_project_cfg, sub_key, True)
+
+            raw_token = jian_project_cfg.get("login_key")
+            if raw_token is None:
+                jian_project_cfg["login_key"] = ""
+            elif not isinstance(raw_token, str):
+                logger.warning(
+                    "[灾害预警] 配置警告: Jian Project 凭证类型错误，已重置为空。"
+                )
+                jian_project_cfg["login_key"] = ""
+            else:
+                jian_project_cfg["login_key"] = raw_token.strip()
+
+            if (
+                jian_project_cfg.get("enabled")
+                and not str(jian_project_cfg.get("login_key", "")).strip()
+            ):
+                if not jian_project_auth_service.has_valid_token():
+                    logger.warning(
+                        "[灾害预警] 配置警告: Jian Project WebSocket 数据源已启用但未配置登录密钥 (lk_...) 或长期 Token (rt_...)，"
+                        "且本地暂无有效持久化凭证，相关连接会被跳过。请前往 https://auth.sismotide.top/ 申请。"
+                    )
 
         # 校验 EQSC 数据源配置（组总闸 + 台风富化 + 海啸轮询子开关）
         eqsc_cfg = cfg.get("eqsc")
