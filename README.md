@@ -167,14 +167,30 @@ EQSC API 需要鉴权，否则无法正常获取数据。
 3. 如果你发现令牌没法选中复制，可以使用文字提取工具或截图丢给 AI 让它帮你识别一下。注意令牌是**不包含换行**的。
 4. 在插件配置中的 `📡数据源配置` → `⚙️ EQSC API 数据源` 中找到 `EQSC 访问令牌 (RefreshToken)` 配置项，填入你的令牌，并确认已打开 `启用 EQSC 数据源` 的开关。
 
+### Jian Project 登录密钥获取
+
+Jian Project 聚合数据源需要鉴权，未配置有效凭证时会直接跳过建连（该通道下的 7 个子源均不可用）。
+
+**登录密钥获取流程：**
+
+1. 打开 [Jian Project 鉴权页](https://auth.sismotide.top/) 。
+2. 填写 **QQ 邮箱**（仅支持 QQ 邮箱域名），勾选个人信息处理说明后提交申请。登录密钥（以 `lk_` 开头）会通过邮件送达，**5 分钟有效且仅能使用一次**，请及时填写。
+3. 如果该邮箱已有未过期的长期 Token，需在网页上勾选「覆盖先前 Token」后再申请，否则会返回 `token_exists`。
+4. 在插件配置中的 `📡数据源配置` → `Jian Project WebSocket 数据源` 中填写 `Jian Project 登录密钥`，并确认已打开 `启用 Jian Project 数据源` 的开关。
+
+插件会自动用登录密钥向鉴权服务换取长期 Token（以 `rt_` 开头，有效期约 180 天）并持久化保存至本地，后续启动无需重复申请；也可以直接在该配置项中填写已有的 `rt_` 长期 Token。握手时使用的短期访问令牌（`at_`）由插件自动换取并在到期前刷新，无需手动维护。
+
+> [!NOTE]
+> 同一长期 Token 默认最多支持 3 条并发连接，超出会返回 `conn_limit`；长期 Token 到期或失效后，需要重新按上方流程申请登录密钥。
+
 ---
 
 > [!TIP]
-> 插件已自动处理各 WebSocket 通道的鉴权数据包发送与轮询令牌刷新，你只需在配置中填写 `FAN Studio API Key` 和 `EQSC 访问令牌 (RefreshToken)` 并重载插件即可。
+> 插件已自动处理各 WebSocket 通道的鉴权数据包发送与轮询令牌刷新，你只需在配置中填写 `FAN Studio API Key`、`EQSC 访问令牌 (RefreshToken)` 和 `Jian Project 登录密钥` 并重载插件即可。
 > EQSC 访问令牌具有有效期，到期后需要自行按上方流程重新刷新令牌并更新插件配置。
 
 > [!IMPORTANT]
-> `FAN Studio API Key` 与 `EQSC 访问令牌 (RefreshToken)` 均属于敏感凭据，可长期用于换取数据访问权限。请妥善保管，**切勿**提交到公开仓库、聊天记录或截图分享中。
+> `FAN Studio API Key`、`EQSC 访问令牌 (RefreshToken)` 与 `Jian Project 登录密钥/长期 Token` 均属于敏感凭据，可长期用于换取数据访问权限。请妥善保管，**切勿**提交到公开仓库、聊天记录或截图分享中。
 
 ### 📬 推送会话列表
 
@@ -896,23 +912,23 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 
 ### 🌍 多数据源支持
 
-插件支持六大数据源和多达 27 个可自由选择启用的子数据源，覆盖全球的预警信息发布平台：
+插件支持七大数据源和多达 36 个可自由选择启用的子数据源，覆盖全球的预警信息发布平台：
 
-- **中国地震预警网地震预警** (FAN Studio / Wolfx) - 实时地震预警信息。
+- **中国地震预警网地震预警** (FAN Studio / Wolfx / Jian Project) - 实时地震预警信息。
 - **中国地震预警网地震预警 (省级)** (FAN Studio) - 省级地震预警网。
-- **中国地震台网地震测定** (FAN Studio / Wolfx) - 正式地震测定信息。
+- **中国地震台网地震测定** (FAN Studio / Wolfx / Jian Project) - 正式地震测定信息。
 - **中国地震台网烈度速报** (FAN Studio / EQSC) - 详细的地震烈度说明。
 - **FSSN 矩心矩张量解 (CMT)** (FAN Studio) - 包含节面参数等信息的地震报告。
-- **台湾中央气象署强震即时警报** (FAN Studio / Wolfx) - 台湾地区地震预警。
+- **台湾中央气象署强震即时警报** (FAN Studio / Wolfx / Jian Project) - 台湾地区地震预警。
 - **台湾中央气象署地震报告** (FAN Studio) - 台湾地区正式地震报告。
-- **日本气象厅紧急地震速报** (P2P / Wolfx / FAN Studio) - 日本紧急地震速报。
-- **日本气象厅地震情报** (P2P / Wolfx) - 详细地震情报。
-- **USGS地震测定** (FAN Studio) - 美国地质调查局地震信息。
+- **日本气象厅紧急地震速报** (FAN Studio / P2P / Wolfx / PancakesAPI / Jian Project) - 日本紧急地震速报。
+- **日本气象厅地震情报** (P2P / Wolfx / PancakesAPI) - 详细地震情报。
+- **USGS地震测定** (FAN Studio / PancakesAPI / Jian Project) - 美国地质调查局地震信息。
 - **美国 ShakeAlert 地震预警** (FAN Studio) - 美国西海岸 ShakeAlert 实时地震预警。
 - **Global Quake** (PancakesAPI) - 全球地震测站实时计算推送 (精度有限)。
 - **中国气象局气象预警** (FAN Studio / Jian Project) - 气象灾害预警信息。
 - **中国气象局实时活跃台风** (FAN Studio / EQSC) - 活跃台风信息。
-- **自然资源部海啸预警中心** (FAN Studio) - 海啸预警信息。
+- **自然资源部海啸预警中心** (FAN Studio / Jian Project) - 海啸预警信息。
 - **日本气象厅海啸预报** (P2P / EQSC) - 日本海啸预报信息。
 - **Global Quake 全球地震** (PancakesAPI) - 全球地震预警信息。
 - **日本国土交通省 MSIL 强震动信息** - 日本海沟 S-Net 海底震度计。
@@ -924,23 +940,32 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 | 中国地震预警网 | FAN Studio | 地震预警 | ✅ |
 | 中国地震预警网 (省级) | FAN Studio | 地震预警 | ✅ |
 | 中国地震预警网 | Wolfx | 地震预警 | ✅ |
+| 中国地震预警网 | Jian Project | 地震预警 | ✅ |
 | 中国地震台网 | FAN Studio | 地震情报 | ✅ |
 | 中国地震台网 | Wolfx | 地震情报 | ✅ |
+| 中国地震台网 | Jian Project | 地震情报 | ✅ |
 | 中国地震台网烈度速报 | FAN Studio | 地震情报 | ✅ |
 | 中国地震台网烈度速报 | EQSC | 地震情报 | ✅ |
 | FSSN 矩心矩张量解 (CMT) | FAN Studio | 地震情报 | ✅ |
 | 台湾中央气象署 | FAN Studio | 地震预警 | ✅ |
 | 台湾中央气象署 | Wolfx | 地震预警 | ✅ |
+| 台湾中央气象署 | Jian Project | 地震预警 | ✅ |
 | 台湾中央气象署地震报告 | FAN Studio | 地震情报 | ✅ |
 | 日本气象厅紧急地震速报 | FAN Studio | 地震预警 | ✅ |
 | 日本气象厅紧急地震速报 | P2P | 地震预警 | ✅ |
 | 日本气象厅紧急地震速报 | Wolfx | 地震预警 | ✅ |
+| 日本气象厅紧急地震速报 | PancakesAPI | 地震预警 | ✅ |
+| 日本气象厅紧急地震速报 | Jian Project | 地震预警 | ✅ |
 | 日本气象厅地震情报 | P2P | 地震情报 | ✅ |
 | 日本气象厅地震情报 | Wolfx | 地震情报 | ✅ |
+| 日本气象厅地震情报 | PancakesAPI | 地震情报 | ✅ |
 | 美国地质调查局 (USGS) | FAN Studio | 地震情报 | ✅ |
+| 美国地质调查局 (USGS) | PancakesAPI | 地震情报 | ✅ |
+| 美国地质调查局 (USGS) | Jian Project | 地震情报 | ✅ |
 | 美国 ShakeAlert 地震预警 | FAN Studio | 地震预警 | ✅ |
 | Global Quake | PancakesAPI | 地震预警 | ✅ |
 | 自然资源部海啸预警中心 | FAN Studio | 海啸预警 | ✅ |
+| 自然资源部海啸预警中心 | Jian Project | 海啸预警 | ✅ |
 | 日本气象厅津波予報 | P2P | 海啸预警 | ✅ |
 | 日本气象厅津波予報 | EQSC | 海啸预警 | ✅ |
 | 中国气象局气象预警 | FAN Studio | 气象预警 | ✅ |
@@ -1088,6 +1113,22 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 - **日本气象厅紧急地震速报 (`japan_jma_eew`)**: 接收日本气象厅紧急地震速报（JMA EEW）。
 - **日本气象厅地震情报 (`japan_jma_earthquake`)**: 接收日本气象厅地震情报列表（JMA EQLIST）。
 - **USGS 地震测定 (`usgs_earthquake`)**: 接收美国地质调查局 (USGS) 地震测定数据。
+
+#### 🔹 Jian Project WebSocket
+
+Jian Project 提供的聚合 WebSocket 数据源，单条 `/all` 连接即可按协议一次性接入 7 路机构子源，是 FAN Studio 之外的第二套多机构聚合通道。
+
+> **鉴权说明**：Jian Project 需配置登录密钥（`lk_` 开头）或长期 Token（`rt_` 开头）才能建立连接，凭证获取方式见「[数据源鉴权引导](#data-source-auth-guide)」章节。
+
+- **启用 (`enabled`)**: 控制 Jian Project 通道是否启用。关闭后全部子源不可用；未配置有效凭证时同样会跳过建连。
+- **登录密钥 (`login_key`)**: 一次性登录密钥（`lk_` 开头，5 分钟有效）。插件会自动用它换取长期 Token（`rt_` 开头，有效期约 180 天）并持久化保存到本地，除更换账号外无需重复申请；也可直接填写 `rt_` 开头的长期 Token。同一长期 Token 默认最多支持 3 条并发连接。
+- **中国地震预警网（CEA）(`china_earthquake_warning`)**: 接收中国地震预警网地震预警。
+- **台湾中央气象署（CWA EEW）(`taiwan_cwa_earthquake`)**: 接收台湾中央气象署强震即时警报。
+- **日本气象厅（JMA EEW）(`japan_jma_eew`)**: 接收日本气象厅紧急地震速报。
+- **中国气象局（气象预警）(`china_weather_alarm`)**: 接收中国气象局下发的各类别、各等级气象灾害预警。
+- **自然资源部海啸预警中心（海啸预警）(`china_tsunami`)**: 接收权威的海啸预报与警报。
+- **中国地震台网（CENC 地震测定）(`china_cenc_earthquake`)**: 接收中国地震台网地震测定信息。
+- **美国地质调查局（USGS 地震测定）(`usgs_earthquake`)**: 接收美国地质调查局全球测定数据。
 
 #### 🔹 EQSC API
 
@@ -2008,14 +2049,18 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 # 中国台湾:
 # cwa_fanstudio      (台湾中央气象署地震预警 - FAN)
 # cwa_wolfx          (台湾中央气象署地震预警 - Wolfx)
+# cwa_jianproject    (台湾中央气象署地震预警 - Jian Project)
 # cwa_fanstudio_report (台湾中央气象署地震报告 - FAN)
 #
 # 日本:
 # jma_fanstudio      (日本气象厅紧急地震速报 - FAN)
 # jma_p2p            (日本气象厅紧急地震速报 - P2P)
 # jma_wolfx          (日本气象厅紧急地震速报 - Wolfx)
+# jma_pancakes       (日本气象厅紧急地震速报 - PancakesAPI)
+# jma_jianproject    (日本气象厅紧急地震速报 - Jian Project)
 # jma_p2p_info       (日本气象厅地震情报 - P2P)
 # jma_wolfx_info     (日本气象厅地震情报 - Wolfx)
+# jma_eqlist_pancakes (日本气象厅地震情报 - PancakesAPI)
 # jma_tsunami_eqsc   (日本气象厅津波予報 - EQSC)
 # jma_tsunami_p2p    (日本气象厅津波予報 - P2P)
 # snet_msil          (S-Net 海底地震计 - MSIL 直连)
@@ -2026,8 +2071,10 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 #
 # 国际/全球:
 # usgs_fanstudio     (美国地质调查局 USGS - FAN)
+# usgs_pancakes      (美国地质调查局 USGS - PancakesAPI)
+# usgs_jianproject   (美国地质调查局 USGS - Jian Project)
 # sa_fanstudio       (美国 ShakeAlert 地震预警 - FAN)
-# global_quake       (Global Quake - OQ)
+# global_quake       (Global Quake - PancakesAPI)
 # fssn_cmt_fanstudio (FSSN 矩心矩张量解 CMT - FAN)
 ```
 
