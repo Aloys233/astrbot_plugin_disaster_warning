@@ -298,8 +298,12 @@ class CeaEewJianProjectParser(BaseParser):
             source_entry = get_source_entry(self.source_id)
             metadata = {
                 "source_family": "jian_project",
-                "source_enum": source_entry.source_enum if source_entry else "jian_project_cea",
-                "source_type": source_entry.source_type.value if source_entry else "earthquake_warning",
+                "source_enum": source_entry.source_enum
+                if source_entry
+                else "jian_project_cea",
+                "source_type": source_entry.source_type.value
+                if source_entry
+                else "earthquake_warning",
                 "event_id": event_id,
                 "province": province,
                 "report_num": report_num,
@@ -322,14 +326,22 @@ class CeaEewJianProjectParser(BaseParser):
                 event_id=event_id,
                 source_id=self.source_id,
                 event_type="earthquake_warning",
-                provider_family=source_entry.provider_family.value if source_entry else "jian_project",
-                source_enum=source_entry.source_enum if source_entry else "jian_project_cea",
+                provider_family=source_entry.provider_family.value
+                if source_entry
+                else "jian_project",
+                source_enum=source_entry.source_enum
+                if source_entry
+                else "jian_project_cea",
                 report_num=report_num,
                 published_at=occurred_at,
                 aliases=(event_id,),
                 attributes={
-                    "parser_name": self.source_entry.parser_name if self.source_entry else "china_eew_parser",
-                    "config_key": source_entry.config_key if source_entry else "china_earthquake_warning",
+                    "parser_name": self.source_entry.parser_name
+                    if self.source_entry
+                    else "china_eew_parser",
+                    "config_key": source_entry.config_key
+                    if source_entry
+                    else "china_earthquake_warning",
                 },
             )
 
@@ -339,7 +351,9 @@ class CeaEewJianProjectParser(BaseParser):
                 received_at=datetime.now(timezone.utc),
                 payload=SourcePayload(
                     source_id=self.source_id,
-                    provider_family=source_entry.provider_family.value if source_entry else "jian_project",
+                    provider_family=source_entry.provider_family.value
+                    if source_entry
+                    else "jian_project",
                     message_type="cea",
                     raw=dict(msg_data),
                     attributes=dict(metadata),

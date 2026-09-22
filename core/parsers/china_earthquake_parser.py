@@ -274,7 +274,9 @@ class CencEarthquakeJianProjectParser(BaseParser):
             if not event_id:
                 return None
 
-            occurred_at = TimeConverter.parse_datetime(msg_data.get("originTime")) or datetime.now(timezone.utc)
+            occurred_at = TimeConverter.parse_datetime(
+                msg_data.get("originTime")
+            ) or datetime.now(timezone.utc)
             magnitude = safe_float_convert(msg_data.get("magnitude"))
             if magnitude is not None:
                 magnitude = round(magnitude, 1)
@@ -291,8 +293,12 @@ class CencEarthquakeJianProjectParser(BaseParser):
             source_entry = get_source_entry(self.source_id)
             metadata = {
                 "source_family": "jian_project",
-                "source_enum": source_entry.source_enum if source_entry else "jian_project_cenc",
-                "source_type": source_entry.source_type.value if source_entry else "earthquake_info",
+                "source_enum": source_entry.source_enum
+                if source_entry
+                else "jian_project_cenc",
+                "source_type": source_entry.source_type.value
+                if source_entry
+                else "earthquake_info",
                 "event_id": event_id,
                 "info_type": info_type,
             }
@@ -311,13 +317,21 @@ class CencEarthquakeJianProjectParser(BaseParser):
                 event_id=event_id,
                 source_id=self.source_id,
                 event_type="earthquake",
-                provider_family=source_entry.provider_family.value if source_entry else "jian_project",
-                source_enum=source_entry.source_enum if source_entry else "jian_project_cenc",
+                provider_family=source_entry.provider_family.value
+                if source_entry
+                else "jian_project",
+                source_enum=source_entry.source_enum
+                if source_entry
+                else "jian_project_cenc",
                 published_at=occurred_at,
                 aliases=(event_id,),
                 attributes={
-                    "parser_name": self.source_entry.parser_name if self.source_entry else "china_report_parser",
-                    "config_key": source_entry.config_key if source_entry else "china_cenc_earthquake",
+                    "parser_name": self.source_entry.parser_name
+                    if self.source_entry
+                    else "china_report_parser",
+                    "config_key": source_entry.config_key
+                    if source_entry
+                    else "china_cenc_earthquake",
                 },
             )
 
@@ -327,7 +341,9 @@ class CencEarthquakeJianProjectParser(BaseParser):
                 received_at=datetime.now(timezone.utc),
                 payload=SourcePayload(
                     source_id=self.source_id,
-                    provider_family=source_entry.provider_family.value if source_entry else "jian_project",
+                    provider_family=source_entry.provider_family.value
+                    if source_entry
+                    else "jian_project",
                     message_type="cenc",
                     raw=dict(msg_data),
                     attributes=dict(metadata),
@@ -339,8 +355,11 @@ class CencEarthquakeJianProjectParser(BaseParser):
                 f"[灾害预警] CENC 地震测定解析成功: {domain_event.place_name} (M {domain_event.magnitude}, {info_type})",
                 is_event_linked=True,
                 event_stream="earthquake",
+                is_silent_window=True,
             )
             return envelope
         except Exception as exc:
-            plugin_logger.error(f"[灾害预警] {self.source_id} 解析 CENC 数据失败: {exc}")
+            plugin_logger.error(
+                f"[灾害预警] {self.source_id} 解析 CENC 数据失败: {exc}"
+            )
             return None
