@@ -135,6 +135,22 @@ class _LocalChinaRegionsDb:
 
             self.code_map = data.get("codeMap", {})
 
+            # 预收集全部省级名称（全称 + 简称）。
+            # 必须独立于下面的遍历顺序：市/区/县剥离后缀后可能与省级名称同名
+            # （天津市「河北区」→「河北」、内蒙古「海南区」→「海南」），
+            # 若不保护，它们会被当作跨省冲突剔除，导致省级简称的反查条目在加载时被静默删除。
+            province_level_names: set[str] = set()
+            for item in self.code_map.values():
+                if not item or len(item) < 3:
+                    continue
+                prov = str(item[0] or "").strip()
+                if not prov:
+                    continue
+                province_level_names.add(prov)
+                p_short = province_short(prov)
+                if p_short:
+                    province_level_names.add(p_short)
+
             # 建立地名（市、区、县）到省份的反查字典
             # 记录冲突的地名（全国同名的区县如“新华区”、“朝阳区”等，跨省冲突时不武断判定）
             conflict_places: set[str] = set()
@@ -157,6 +173,9 @@ class _LocalChinaRegionsDb:
                 for place in (city, district):
                     if not place:
                         continue
+                    # 与省级名称同名的市/区/县（如直辖市行）不参与市县级映射
+                    if place in province_level_names:
+                        continue
                     if place in self.place_to_province and self.place_to_province[place] != prov:
                         conflict_places.add(place)
                     else:
@@ -166,6 +185,9 @@ class _LocalChinaRegionsDb:
                     for sfx in ("市", "区", "县", "旗", "盟", "州"):
                         if place.endswith(sfx) and len(place) > 2:
                             base_name = place[:-len(sfx)]
+                            # 剥离后与省级名称同名时保留省级条目（如「河北区」→「河北」）
+                            if base_name in province_level_names:
+                                continue
                             if base_name in self.place_to_province and self.place_to_province[base_name] != prov:
                                 conflict_places.add(base_name)
                             else:

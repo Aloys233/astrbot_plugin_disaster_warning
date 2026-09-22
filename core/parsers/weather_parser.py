@@ -310,6 +310,7 @@ class WeatherAlarmJianProjectParser(BaseParser):
         self._WEATHER_DEDUPE_MAX_ENTRIES = 512
 
     def _is_weather_duplicate(self, weather_id: str) -> bool:
+        """判断预警 id 是否处于短窗去重窗口内。"""
         if not weather_id:
             return False
         now = datetime.now(timezone.utc).timestamp()
@@ -317,13 +318,16 @@ class WeatherAlarmJianProjectParser(BaseParser):
         self._processed_weather_ids = {
             k: t for k, t in self._processed_weather_ids.items() if t > cutoff
         }
-        if weather_id in self._processed_weather_ids:
-            return True
+        return weather_id in self._processed_weather_ids
+
+    def _remember_weather_id(self, weather_id: str) -> None:
+        """登记预警 id 的处理时间，并控制缓存容量。"""
+        if not weather_id:
+            return
+        self._processed_weather_ids[weather_id] = datetime.now(timezone.utc).timestamp()
         if len(self._processed_weather_ids) >= self._WEATHER_DEDUPE_MAX_ENTRIES:
             oldest_key = min(self._processed_weather_ids, key=self._processed_weather_ids.get)
             self._processed_weather_ids.pop(oldest_key, None)
-        self._processed_weather_ids[weather_id] = now
-        return False
 
     def _parse_data(self, data: dict[str, Any]) -> EventEnvelope | None:
         try:
@@ -426,6 +430,10 @@ class WeatherAlarmJianProjectParser(BaseParser):
                 ),
                 metadata=metadata,
             )
+
+            # 加入防重去噪队列中：仅在事件装配成功后登记，
+            # 避免后续字段缺失等原因导致解析丢弃时污染短窗去重窗口（补发内容会被误判为重复）
+            self._remember_weather_id(weather_id)
 
             plugin_logger.info(
                 f"[灾害预警] 气象预警解析成功: {domain_event.title or domain_event.headline}, 时间: {issue_time}",

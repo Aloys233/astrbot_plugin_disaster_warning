@@ -910,7 +910,7 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 - **USGS地震测定** (FAN Studio) - 美国地质调查局地震信息。
 - **美国 ShakeAlert 地震预警** (FAN Studio) - 美国西海岸 ShakeAlert 实时地震预警。
 - **Global Quake** (PancakesAPI) - 全球地震测站实时计算推送 (精度有限)。
-- **中国气象局气象预警** (FAN Studio / PancakesAPI) - 气象灾害预警信息。
+- **中国气象局气象预警** (FAN Studio / Jian Project) - 气象灾害预警信息。
 - **中国气象局实时活跃台风** (FAN Studio / EQSC) - 活跃台风信息。
 - **自然资源部海啸预警中心** (FAN Studio) - 海啸预警信息。
 - **日本气象厅海啸预报** (P2P / EQSC) - 日本海啸预报信息。
@@ -944,7 +944,7 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 | 日本气象厅津波予報 | P2P | 海啸预警 | ✅ |
 | 日本气象厅津波予報 | EQSC | 海啸预警 | ✅ |
 | 中国气象局气象预警 | FAN Studio | 气象预警 | ✅ |
-| 中国气象局气象预警 | PancakesAPI | 气象预警 | ✅ |
+| 中国气象局气象预警 | Jian Project | 气象预警 | ✅ |
 | 中国气象局实时活跃台风 | FAN Studio | 台风信息 | ✅ |
 | 中国气象局实时活跃台风 | EQSC | 台风信息 | ✅ |
 | S-Net 海底地震计 (MSIL) | 日本国土交通省 | 地震情报 | ✅ |
@@ -956,7 +956,7 @@ https://obs.nmefc.cn/Warning/TsunamiAdvice/202608150558_3_file/Earthquake_Pos.jp
 🧪 **测试中**  
 
 > [!TIP]
-> 其中 PancakesAPI 为插件自建数据源，数据服务公开可用。详情请查看[PancakesAPI文档](https://docs.aloys23.link/docs/openquake/overview)。
+> 其中 PancakesAPI 为插件自建数据源，数据服务公开可用。详情请查看[PancakesAPI文档](https://wiki.aloys23.link/wiki/PancakesAPI)。
 
 ### ⏰ 数据延迟
 
@@ -3023,7 +3023,7 @@ graph TB
 
 后端采用**全异步、分层解耦**的架构，自下而上划分为十大协作层，对应上方后端架构图：
 
-- **1. 宿主与外部输入**：AstrBot 框架作为宿主加载插件，用户与管理员通过聊天命令交互；上游数据源经 **WebSocket 长连接**（FAN Studio / P2P / Wolfx / PancakesAPI）与 **HTTP 轮询**（EQSC、S-Net MSIL、NMC 气象等）持续供给数据；Web 管理端由浏览器访问。
+- **1. 宿主与外部输入**：AstrBot 框架作为宿主加载插件，用户与管理员通过聊天命令交互；上游数据源经 **WebSocket 长连接**（FAN Studio / Jian Project / P2P / Wolfx / PancakesAPI）与 **HTTP 轮询**（EQSC、S-Net MSIL、NMC 气象等）持续供给数据；Web 管理端由浏览器访问。
 - **2. 插件入口层**：`main.py` 保持精简壳职责，将生命周期与命令实现下沉到 `plugin/` 子服务。生命周期服务负责配置修正、管理员同步、遥测注入与 asyncio 异常托管；管理命令与查询命令服务分别实现运维指令与业务查询指令；Web 管理端装配入口负责 FastAPI 服务与实时广播通道的启动。
 - **3. 应用编排层（核心服务）**：核心服务门面（`DisasterWarningService`）持有配置、上下文与共享运行状态，统一装配消息、统计、缓存、查询等基础能力。统一事件流水线将**推送 → 统计 → 管理端广播**串接为固定顺序；EQSC 通道服务统一管理鉴权、熔断与令牌保活，台风数据富化与历史数据库重建服务基于该通道工作。
 - **4. 领域模型与数据源注册层**：`domain/` 定义统一事件信封（地震 / 海啸 / 气象 / 台风）与展示模型、事件上下文与标识（去重指纹基础）；`sources/` 维护数据源目录、条目、机构目录与路由映射，是"配置 → 连接 → 解析 → 展示"全链路的注册中心。
