@@ -102,8 +102,9 @@ class ConnectionHealthService:
         self._last_purge_at: float = 0.0
         # 历史连接组 key 归并只需在进程内成功执行一次
         self._legacy_migrated = False
-        # 归并重入锁：启动期与前端首屏查询可能并发触发
-        self._legacy_migrating = False
+        # 归并互斥锁：启动期与前端首屏查询可能并发触发；
+        # 懒创建以兼容无运行中事件循环的构造时机。
+        self._legacy_lock: asyncio.Lock | None = None
         self._display_tz = "UTC+8"
         # 完整 Statuspage 历史载荷短 TTL 缓存，降低管理端轮询对 DB 的压力
         self._history_cache: dict[str, Any] | None = None
@@ -169,9 +170,15 @@ class ConnectionHealthService:
                 logger.warning(f"[灾害预警] 连接健康采样停止时异常: {exc}")
         logger.debug("[灾害预警] 连接健康采样服务已停止")
 
+    def _get_legacy_lock(self) -> asyncio.Lock:
+        """懒创建归并互斥锁（避免构造期强绑事件循环）。"""
+        if self._legacy_lock is None:
+            self._legacy_lock = asyncio.Lock()
+        return self._legacy_lock
+
     async def _migrate_legacy_group_keys(self) -> None:
         """把历史连接组 key 的健康数据归并到当前规范 key。"""
-        if self._legacy_migrated or self._legacy_migrating:
+        if self._legacy_migrated:
             return
         aliases = LEGACY_CONNECTION_GROUP_KEYS
         if not aliases:
@@ -181,12 +188,14 @@ class ConnectionHealthService:
         if repo is None:
             # DB 尚未就绪，保留标记为未迁移，下次启动或首屏查询再试。
             return
-        self._legacy_migrating = True
-        try:
+
+        async with self._get_legacy_lock():
+            # 双重检查：等待锁期间首个调用者可能已完成迁移。
+            if self._legacy_migrated:
+                return
             migrated = await repo.migrate_legacy_group_keys(aliases)
-        finally:
-            self._legacy_migrating = False
-        self._legacy_migrated = True
+            self._legacy_migrated = True
+
         if any(int(v or 0) > 0 for v in migrated.values()):
             # 归并后历史缓存失效，避免仍返回旧 key 聚合。
             self._history_cache = None
