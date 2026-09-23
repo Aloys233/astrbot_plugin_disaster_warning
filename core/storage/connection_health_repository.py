@@ -234,6 +234,91 @@ class ConnectionHealthRepository:
         )
         await connection.commit()
 
+    async def migrate_legacy_group_keys(
+        self,
+        aliases: dict[str, str] | None = None,
+    ) -> dict[str, int]:
+        """把历史连接组 key 的健康数据归并到规范 key。
+
+        Args:
+            aliases: 历史 key -> 规范 key 映射；空值或自映射项自动忽略。
+
+        Returns:
+            各表实际迁移行数 {"samples": int, "days": int, "incidents": int}。
+        """
+        alias_map: dict[str, str] = {}
+        for legacy, canonical in (aliases or {}).items():
+            legacy_key = str(legacy or "").strip()
+            canonical_key = str(canonical or "").strip()
+            if legacy_key and canonical_key and legacy_key != canonical_key:
+                alias_map[legacy_key] = canonical_key
+
+        result = {"samples": 0, "days": 0, "incidents": 0}
+        if not alias_map:
+            return result
+
+        for legacy_key, canonical_key in alias_map.items():
+            connection = await self._connection()
+            cursor = await connection.cursor()
+
+            # 1) 原始采样与通道事故均无 (group_key, day) 主键约束，
+            #    改写归属即可，不存在行冲突。
+            await cursor.execute(
+                "UPDATE connection_health_samples SET group_key = ? WHERE group_key = ?",
+                (canonical_key, legacy_key),
+            )
+            result["samples"] += max(0, int(cursor.rowcount or 0))
+            await cursor.execute(
+                "UPDATE connection_incidents SET group_key = ? WHERE group_key = ?",
+                (canonical_key, legacy_key),
+            )
+            result["incidents"] += max(0, int(cursor.rowcount or 0))
+            await connection.commit()
+
+            # 2) 日聚合同一天可能已有规范 key 行，必须走累加 upsert 合并。
+            await cursor.execute(
+                """
+                SELECT day, minutes_monitored, minutes_major, minutes_partial,
+                       minutes_degraded, worst_state, sample_count
+                FROM connection_health_days
+                WHERE group_key = ?
+                """,
+                (legacy_key,),
+            )
+            legacy_days = [self._row_to_dict(row) for row in await cursor.fetchall()]
+
+            for row in legacy_days:
+                day = str(row.get("day") or "").strip()
+                if not day:
+                    continue
+                await self.upsert_day_aggregate(
+                    {
+                        "group_key": canonical_key,
+                        "day": day,
+                        "minutes_monitored": row.get("minutes_monitored") or 0,
+                        "minutes_major": row.get("minutes_major") or 0,
+                        "minutes_partial": row.get("minutes_partial") or 0,
+                        "minutes_degraded": row.get("minutes_degraded") or 0,
+                        # upsert 内按严重度 CASE 取更差者，此处透传历史状态即可。
+                        "worst_state": row.get("worst_state") or "not_monitored",
+                        "sample_count": int(row.get("sample_count") or 0),
+                        # 传 None 让 upsert 回退 CURRENT_TIMESTAMP，
+                        # 避免用旧行的 updated_at 覆盖规范 key 上更新的时间戳。
+                        "updated_at": None,
+                    }
+                )
+                result["days"] += 1
+
+            # 3) 归并完成后再清理旧 key 日聚合，保证幂等。
+            if legacy_days:
+                await cursor.execute(
+                    "DELETE FROM connection_health_days WHERE group_key = ?",
+                    (legacy_key,),
+                )
+                await connection.commit()
+
+        return result
+
     async def recompute_all_uptime_ratios(self) -> int:
         """用分钟字段重算全部日聚合 uptime_ratio，修复历史整除错误。"""
         connection = await self._connection()

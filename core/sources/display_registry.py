@@ -8,6 +8,7 @@
   · CONNECTION_DISPLAY_NAMES  物理连接组展示名表（连接组 key -> 展示名）
   · CONNECTION_GROUP_ORDER    连接组展示顺序
   · CONNECTION_GROUP_ALIAS    提供方家族 -> 连接组 key
+  · LEGACY_CONNECTION_GROUP_KEYS  历史连接组 key -> 规范 key（更名兼容）
   · DISPLAY_NAME_ALIASES      展示名 -> 连接组 key 的反向别名（历史兼容）
 
 - 场景投影层：banner / 离线通知 / 管理命令 / 前端子源列表等场景会在事实
@@ -238,7 +239,25 @@ CONNECTION_GROUP_ALIAS: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
-# 7. 展示名 -> 连接组 key 的反向别名（历史兼容）
+# 7. 历史连接组 key -> 规范 key（更名兼容）
+# ---------------------------------------------------------------------------
+# 连接组曾多次更名（Global Quake → OpenQuakeAPI → PancakesAPI）。连接健康
+# 采样 / 日聚合 / 通道事故三张表均以 group_key 为落库维度，更名后若只按新
+# key 读写，旧 key 下的历史可用性会与规范 key 割裂，前端「通道健康」面板
+# 表现为整条 90 天条带从零重新统计、Past Incidents 也一并丢失。
+#
+# 此表用于存储层把历史 key 归并到当前规范 key，仅在同名物理通道改名时使用；
+# 归并后旧 key 行会被清理，重复执行无副作用（幂等）。
+LEGACY_CONNECTION_GROUP_KEYS: dict[str, str] = {
+    # OpenQuakeAPI → PancakesAPI 更名
+    "openquake_api": "pancakes_api",
+    # 更早期的 Global Quake 组名（先迁为 openquake_api，再迁为 pancakes_api），
+    # 一并折叠，覆盖跨多个版本升级的用户。
+    "global_quake": "pancakes_api",
+}
+
+# ---------------------------------------------------------------------------
+# 8. 展示名 -> 连接组 key 的反向别名（历史兼容）
 # ---------------------------------------------------------------------------
 # ConnectionsPayloadBuilder / SourceRuntimeQuery 可能使用的展示名别名，
 # 包含历史上出现过的括号/空格写法，用于把展示名归一化回连接组 key。
@@ -268,6 +287,7 @@ __all__ = [
     "CONNECTION_DISPLAY_NAMES",
     "CONNECTION_GROUP_ORDER",
     "CONNECTION_GROUP_ALIAS",
+    "LEGACY_CONNECTION_GROUP_KEYS",
     "DISPLAY_NAME_ALIASES",
     "ACTIVE_SERVER_LABELS",
 ]

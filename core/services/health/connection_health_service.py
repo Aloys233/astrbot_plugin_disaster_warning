@@ -27,6 +27,7 @@ from ...sources.display_registry import (
     CONNECTION_DISPLAY_NAMES,
     CONNECTION_GROUP_ORDER,
     DISPLAY_NAME_ALIASES,
+    LEGACY_CONNECTION_GROUP_KEYS,
 )
 from ...storage.connection_health_repository import ConnectionHealthRepository
 from ..query.source_runtime_query_service import SourceRuntimeQueryService
@@ -99,6 +100,10 @@ class ConnectionHealthService:
         # group_key -> 运行态边沿追踪
         self._trackers: dict[str, dict[str, Any]] = {}
         self._last_purge_at: float = 0.0
+        # 历史连接组 key 归并只需在进程内成功执行一次
+        self._legacy_migrated = False
+        # 归并重入锁：启动期与前端首屏查询可能并发触发
+        self._legacy_migrating = False
         self._display_tz = "UTC+8"
         # 完整 Statuspage 历史载荷短 TTL 缓存，降低管理端轮询对 DB 的压力
         self._history_cache: dict[str, Any] | None = None
@@ -124,6 +129,11 @@ class ConnectionHealthService:
         if self._running:
             return
         self._running = True
+        # 更名兼容：先把历史连接组归并到规范 key，再回填事故。
+        try:
+            await self._migrate_legacy_group_keys()
+        except Exception as exc:
+            logger.warning(f"[灾害预警] 连接健康历史分组归并失败: {exc}")
         # 启动时从 DB 回填未关闭事故，避免进程重启后 tracker 丢失导致重复开单。
         try:
             await self._hydrate_open_incidents()
@@ -158,6 +168,36 @@ class ConnectionHealthService:
             except Exception as exc:
                 logger.warning(f"[灾害预警] 连接健康采样停止时异常: {exc}")
         logger.debug("[灾害预警] 连接健康采样服务已停止")
+
+    async def _migrate_legacy_group_keys(self) -> None:
+        """把历史连接组 key 的健康数据归并到当前规范 key。"""
+        if self._legacy_migrated or self._legacy_migrating:
+            return
+        aliases = LEGACY_CONNECTION_GROUP_KEYS
+        if not aliases:
+            self._legacy_migrated = True
+            return
+        repo = self._ensure_repo()
+        if repo is None:
+            # DB 尚未就绪，保留标记为未迁移，下次启动或首屏查询再试。
+            return
+        self._legacy_migrating = True
+        try:
+            migrated = await repo.migrate_legacy_group_keys(aliases)
+        finally:
+            self._legacy_migrating = False
+        self._legacy_migrated = True
+        if any(int(v or 0) > 0 for v in migrated.values()):
+            # 归并后历史缓存失效，避免仍返回旧 key 聚合。
+            self._history_cache = None
+            self._history_cache_key = ""
+            self._history_cache_at = 0.0
+            logger.info(
+                "[灾害预警] 已归并历史连接组健康数据: "
+                f"采样 {migrated.get('samples', 0)} 条 / "
+                f"日聚合 {migrated.get('days', 0)} 天 / "
+                f"事故 {migrated.get('incidents', 0)} 条"
+            )
 
     async def _hydrate_open_incidents(self) -> None:
         """从数据库恢复各连接组未关闭事故到内存 tracker。"""
@@ -903,6 +943,12 @@ class ConnectionHealthService:
         if not use_history_cache:
             repo = self._ensure_repo()
             if repo is not None:
+                # 兜底：若启动时 DB 尚未就绪导致归并未执行，这里在读取前补做一次，
+                # 保证首屏历史条带一定使用归并后的规范 key 数据。
+                try:
+                    await self._migrate_legacy_group_keys()
+                except Exception as exc:
+                    logger.warning(f"[灾害预警] 连接健康历史分组归并失败: {exc}")
                 try:
                     day_rows = await repo.list_day_aggregates(
                         days=days,
