@@ -262,11 +262,15 @@ function ConnectionsGrid() {
                 id: 'jian_project',
                 displayName: 'Jian Project',
                 matcher: (key) => {
-                    const k = String(key || '').toLowerCase();
+                    const k = String(key || '').toLowerCase().trim();
+                    // 后端连接表以展示名 "Jian Project"（含空格）为键，
+                    // 而 catalog 连接组键为 "jian_project_all"（含下划线）。
+                    // 这里归一化空格 / 下划线 / 连字符后再匹配，避免两种形态失配。
+                    const normalized = k.replace(/[\s_-]+/g, '');
                     return (
-                        k === 'jian_project_all'
-                        || k === 'jian_project'
-                        || k.includes('jian_project')
+                        normalized === 'jianprojectall'
+                        || normalized === 'jianproject'
+                        || normalized.includes('jianproject')
                         || k.includes('sismotide')
                     );
                 },
