@@ -294,7 +294,7 @@ class JianProjectAuthService:
                     self._max_connections = int(
                         data.get("max_connections") or self._max_connections
                     )
-                    logger.info(
+                    logger.debug(
                         f"[灾害预警] Jian Project 短期访问令牌换取成功（有效期 {int(exp_sec)} 秒）"
                     )
                     return token

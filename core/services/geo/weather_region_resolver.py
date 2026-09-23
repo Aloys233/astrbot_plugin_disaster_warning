@@ -208,7 +208,7 @@ class _LocalChinaRegionsDb:
                     self.place_to_province[alias] = self.place_to_province[official]
 
             self._loaded = True
-            logger.info(
+            logger.debug(
                 f"[灾害预警] 成功加载本地行政区划字典: {len(self.code_map)} 个区划代码，"
                 f"{len(self.place_to_province)} 个本地地名映射"
             )
