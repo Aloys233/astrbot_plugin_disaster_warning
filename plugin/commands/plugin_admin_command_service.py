@@ -1167,7 +1167,7 @@ class PluginAdminCommandService(CommandTelemetryMixin):
             [
                 "📍 /设置所在地 [纬度] [经度] [自定义地名] [生效范围]",
                 "",
-                "• 纬度、经度至少提供一个，其余参数均可留空；",
+                "• 纬度、经度、地名至少要提供一项，其余参数均可留空；",
                 "  未提供的项沿用原值，不会被清空",
                 "• 两个坐标按「纬度 经度」顺序识别；",
                 "  只填一个时，绝对值大于 90 的自动判定为经度",
@@ -1196,10 +1196,7 @@ class PluginAdminCommandService(CommandTelemetryMixin):
     ):
         """处理 /设置所在地：写入本地监控经纬度、地名与生效范围。
 
-        采用增量更新语义：本次未显式提供的字段沿用原值，避免“只改地名”
-        或“只补一个坐标”时把已有配置清空。
-
-        参数解析分两阶段：先确定生效范围，再按该范围读取当前生效的
+        采用增量更新语义，参数解析分两阶段：先确定生效范围，再按该范围读取当前生效的
         local_monitoring 作为消歧上下文，从而准确支持“只修正其中一个坐标”。
         """
         if not await self.plugin.is_plugin_admin(event):
@@ -1259,9 +1256,14 @@ class PluginAdminCommandService(CommandTelemetryMixin):
             updates["longitude"] = longitude
         if place_name:
             updates["place_name"] = place_name
-        # 只要写入了坐标就自动开启本地监控，避免“设了坐标却不生效”的困惑。
+        # 仅当「本次写入了坐标」且「合并后的经纬度同时齐备」时才开启本地监控。
+        # 若只有一个坐标就置 enabled=True，距离与烈度将按赤道/本初子午线的虚假位置参与过滤，
+        # 静默污染本地预估结果，而配置面板上看不出任何异常。
         if latitude is not None or longitude is not None:
-            updates["enabled"] = True
+            merged_lat = updates.get("latitude", existing_lm.get("latitude"))
+            merged_lon = updates.get("longitude", existing_lm.get("longitude"))
+            if merged_lat is not None and merged_lon is not None:
+                updates["enabled"] = True
 
         # 组装“本次变更”摘要，让用户明确知道哪几项被改写。
         changed: list[str] = []
@@ -1322,7 +1324,10 @@ class PluginAdminCommandService(CommandTelemetryMixin):
                 lines.append("ℹ️ 检测到经纬度顺序疑似颠倒，已自动纠正为「纬度 经度」")
             if final_lm.get("latitude") is None or final_lm.get("longitude") is None:
                 lines.append("")
-                lines.append("⚠️ 本地预估需经纬度同时存在才会生效，建议补齐另一个坐标。")
+                lines.append(
+                    "⚠️ 本地监控需经纬度同时齐备才会开启，本次未开启。"
+                    "请补齐另一个坐标后再试。"
+                )
 
             # 遥测仅上报布尔型是否存在坐标，不上报具体经纬度与地名，避免位置隐私外泄。
             await self._track_command_feature(

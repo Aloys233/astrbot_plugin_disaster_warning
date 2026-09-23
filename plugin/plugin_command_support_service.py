@@ -269,6 +269,9 @@ class PluginCommandSupportService:
             含 latitude / longitude / place_name / scope / scope_target /
             swapped / ambiguous / error 的字典；
             error 非空表示解析失败，调用方应回显用法提示。
+
+        约束：纬度、经度、地名三者至少要提供一项。仅提供地名亦为合法用法，
+        用于在坐标已配置的前提下单独修改地名（增量更新语义）。
         """
         result: dict[str, Any] = {
             "latitude": None,
@@ -393,8 +396,9 @@ class PluginCommandSupportService:
         if longitude is not None and not -180.0 <= longitude <= 180.0:
             result["error"] = f"经度 {longitude} 超出有效范围 -180 ~ 180"
             return result
-        if latitude is None and longitude is None:
-            result["error"] = "至少需要提供纬度或经度之一"
+        # 仅当坐标与地名“全部缺失”时才算解析失败。
+        if latitude is None and longitude is None and not place_parts:
+            result["error"] = "至少需要提供纬度、经度或地名之一"
             return result
 
         result["latitude"] = latitude
