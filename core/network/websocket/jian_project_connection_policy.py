@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import time
 from pathlib import Path
 from typing import Any
 
 import aiohttp
+
 from astrbot.api import logger
 from astrbot.api.star import StarTools
 
@@ -104,8 +104,12 @@ class JianProjectAuthService:
                     self._refresh_token = rt
                     self._rt_expires_at = float(data.get("expires_at") or 0.0)
                     self._max_connections = int(data.get("max_connections") or 3)
-                    self._last_used_login_key = str(data.get("last_used_login_key") or "").strip() or None
-                    logger.debug(f"[灾害预警] 已从磁盘加载持久化的 Jian Project 长期 Token（前缀: {rt[:6]}...）")
+                    self._last_used_login_key = (
+                        str(data.get("last_used_login_key") or "").strip() or None
+                    )
+                    logger.debug(
+                        f"[灾害预警] 已从磁盘加载持久化的 Jian Project 长期 Token（前缀: {rt[:6]}...）"
+                    )
         except Exception as e:
             logger.warning(f"[灾害预警] 加载 Jian Project 凭证持久化文件失败: {e}")
 
@@ -121,7 +125,9 @@ class JianProjectAuthService:
                 "updated_at": time.time(),
             }
             tmp_path = self._storage_path.with_suffix(".tmp")
-            tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp_path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
             tmp_path.replace(self._storage_path)
             logger.debug("[灾害预警] Jian Project 长期 Token 持久化保存成功")
         except Exception as e:
@@ -169,18 +175,26 @@ class JianProjectAuthService:
         should_close = False
         client_session = session
         if client_session is None or client_session.closed:
-            client_session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20))
+            client_session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=20)
+            )
             should_close = True
 
         try:
-            logger.info("[灾害预警] 正在使用登录密钥向 Jian Project 换取长期 Token (rt_...)...")
-            async with client_session.post(JIAN_PROJECT_REFRESH_URL, headers=headers) as resp:
+            logger.info(
+                "[灾害预警] 正在使用登录密钥向 Jian Project 换取长期 Token (rt_...)..."
+            )
+            async with client_session.post(
+                JIAN_PROJECT_REFRESH_URL, headers=headers
+            ) as resp:
                 status = resp.status
                 try:
                     data = await resp.json()
                 except Exception:
                     raw_text = await resp.text()
-                    raise RuntimeError(f"Jian Project 换票接口响应非 JSON (HTTP {status}): {raw_text[:200]}")
+                    raise RuntimeError(
+                        f"Jian Project 换票接口响应非 JSON (HTTP {status}): {raw_text[:200]}"
+                    )
 
                 if status == 200 and data.get("ok"):
                     token = str(data.get("token") or "").strip()
@@ -208,7 +222,9 @@ class JianProjectAuthService:
                 # 处理错误
                 code = data.get("code")
                 msg = data.get("message") or data.get("error") or f"HTTP {status}"
-                friendly_msg = AUTH_ERROR_MESSAGES.get(code, msg) if isinstance(code, int) else msg
+                friendly_msg = (
+                    AUTH_ERROR_MESSAGES.get(code, msg) if isinstance(code, int) else msg
+                )
 
                 # 特殊场景：4103 token_exists（已有未过期长期 Token 且未勾选覆盖）
                 if code == 4103 and self.has_valid_token():
@@ -218,7 +234,9 @@ class JianProjectAuthService:
                     )
                     return self._refresh_token  # type: ignore[return-value]
 
-                error_detail = f"Jian Project 换取长期 Token 失败 [{code}]: {friendly_msg}"
+                error_detail = (
+                    f"Jian Project 换取长期 Token 失败 [{code}]: {friendly_msg}"
+                )
                 logger.error(f"[灾害预警] {error_detail}")
                 raise RuntimeError(error_detail)
         finally:
@@ -243,37 +261,55 @@ class JianProjectAuthService:
         should_close = False
         client_session = session
         if client_session is None or client_session.closed:
-            client_session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20))
+            client_session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=20)
+            )
             should_close = True
 
         try:
-            logger.debug("[灾害预警] 正在使用长期 Token 换取 Jian Project 短期访问令牌 (at_...)...")
-            async with client_session.post(JIAN_PROJECT_ACCESS_URL, headers=headers) as resp:
+            logger.debug(
+                "[灾害预警] 正在使用长期 Token 换取 Jian Project 短期访问令牌 (at_...)..."
+            )
+            async with client_session.post(
+                JIAN_PROJECT_ACCESS_URL, headers=headers
+            ) as resp:
                 status = resp.status
                 try:
                     data = await resp.json()
                 except Exception:
                     raw_text = await resp.text()
-                    raise RuntimeError(f"Jian Project 换票接口响应非 JSON (HTTP {status}): {raw_text[:200]}")
+                    raise RuntimeError(
+                        f"Jian Project 换票接口响应非 JSON (HTTP {status}): {raw_text[:200]}"
+                    )
 
                 if status == 200 and data.get("ok"):
                     token = str(data.get("token") or "").strip()
                     if not token:
-                        raise RuntimeError("Jian Project 换票响应未包含 access token 字段")
+                        raise RuntimeError(
+                            "Jian Project 换票响应未包含 access token 字段"
+                        )
                     exp_sec = float(data.get("expires_after_sec") or 3600)
                     self._access_token = token
                     self._at_expires_at = time.time() + exp_sec
-                    self._max_connections = int(data.get("max_connections") or self._max_connections)
-                    logger.info(f"[灾害预警] Jian Project 短期访问令牌换取成功（有效期 {int(exp_sec)} 秒）")
+                    self._max_connections = int(
+                        data.get("max_connections") or self._max_connections
+                    )
+                    logger.debug(
+                        f"[灾害预警] Jian Project 短期访问令牌换取成功（有效期 {int(exp_sec)} 秒）"
+                    )
                     return token
 
                 code = data.get("code")
                 msg = data.get("message") or data.get("error") or f"HTTP {status}"
-                friendly_msg = AUTH_ERROR_MESSAGES.get(code, msg) if isinstance(code, int) else msg
+                friendly_msg = (
+                    AUTH_ERROR_MESSAGES.get(code, msg) if isinstance(code, int) else msg
+                )
 
                 # 若长期 Token 已失效或过期，清理本地持久化并警告
                 if code in (4201, 4202):
-                    logger.error(f"[灾害预警] Jian Project 长期 Token 已失效 ({friendly_msg})，正在清理本地过期凭证。")
+                    logger.error(
+                        f"[灾害预警] Jian Project 长期 Token 已失效 ({friendly_msg})，正在清理本地过期凭证。"
+                    )
                     self.clear_stored_token()
 
                 error_detail = f"Jian Project 换取访问令牌失败 [{code}]: {friendly_msg}"
@@ -332,7 +368,9 @@ class JianProjectAuthService:
                 return self._access_token
 
             # 5. 使用长期 Token 换取新的短期访问令牌
-            return await self.exchange_refresh_token(self._refresh_token, session=session)
+            return await self.exchange_refresh_token(
+                self._refresh_token, session=session
+            )
 
     def invalidate_token(self) -> None:
         """使当前短期访问令牌失效（握手被拒绝时调用）。"""

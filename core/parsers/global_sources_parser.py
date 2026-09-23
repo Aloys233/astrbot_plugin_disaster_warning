@@ -716,7 +716,9 @@ class UsgsEarthquakeJianProjectParser(BaseParser):
             if not event_id:
                 return None
 
-            occurred_at = TimeConverter.parse_datetime(msg_data.get("originTime")) or datetime.now(timezone.utc)
+            occurred_at = TimeConverter.parse_datetime(
+                msg_data.get("originTime")
+            ) or datetime.now(timezone.utc)
             magnitude = safe_float_convert(msg_data.get("magnitude"))
             if magnitude is not None:
                 magnitude = round(magnitude, 1)
@@ -741,8 +743,12 @@ class UsgsEarthquakeJianProjectParser(BaseParser):
             source_entry = get_source_entry(self.source_id)
             metadata = {
                 "source_family": "jian_project",
-                "source_enum": source_entry.source_enum if source_entry else "jian_project_usgs",
-                "source_type": source_entry.source_type.value if source_entry else "earthquake_info",
+                "source_enum": source_entry.source_enum
+                if source_entry
+                else "jian_project_usgs",
+                "source_type": source_entry.source_type.value
+                if source_entry
+                else "earthquake_info",
                 "event_id": event_id,
                 "info_type": info_type,
             }
@@ -761,13 +767,21 @@ class UsgsEarthquakeJianProjectParser(BaseParser):
                 event_id=event_id,
                 source_id=self.source_id,
                 event_type="earthquake",
-                provider_family=source_entry.provider_family.value if source_entry else "jian_project",
-                source_enum=source_entry.source_enum if source_entry else "jian_project_usgs",
+                provider_family=source_entry.provider_family.value
+                if source_entry
+                else "jian_project",
+                source_enum=source_entry.source_enum
+                if source_entry
+                else "jian_project_usgs",
                 published_at=occurred_at,
                 aliases=(event_id,),
                 attributes={
-                    "parser_name": self.source_entry.parser_name if self.source_entry else "global_report_parser",
-                    "config_key": source_entry.config_key if source_entry else "usgs_earthquake",
+                    "parser_name": self.source_entry.parser_name
+                    if self.source_entry
+                    else "global_report_parser",
+                    "config_key": source_entry.config_key
+                    if source_entry
+                    else "usgs_earthquake",
                 },
             )
 
@@ -777,7 +791,9 @@ class UsgsEarthquakeJianProjectParser(BaseParser):
                 received_at=datetime.now(timezone.utc),
                 payload=SourcePayload(
                     source_id=self.source_id,
-                    provider_family=source_entry.provider_family.value if source_entry else "jian_project",
+                    provider_family=source_entry.provider_family.value
+                    if source_entry
+                    else "jian_project",
                     message_type="usgs",
                     raw=dict(msg_data),
                     attributes=dict(metadata),
@@ -789,10 +805,13 @@ class UsgsEarthquakeJianProjectParser(BaseParser):
                 f"[灾害预警] USGS 地震测定解析成功: {domain_event.place_name} (M {domain_event.magnitude})",
                 is_event_linked=True,
                 event_stream="earthquake",
+                is_silent_window=True,
             )
             return envelope
         except Exception as exc:
-            plugin_logger.error(f"[灾害预警] {self.source_id} 解析 USGS 数据失败: {exc}")
+            plugin_logger.error(
+                f"[灾害预警] {self.source_id} 解析 USGS 数据失败: {exc}"
+            )
             return None
 
 
@@ -809,11 +828,7 @@ class UsgsPancakesParser(BaseParser):
             if not msg_data or self._is_heartbeat_message(msg_data):
                 return None
 
-            event_id = str(
-                msg_data.get("eventId")
-                or msg_data.get("id")
-                or ""
-            ).strip()
+            event_id = str(msg_data.get("eventId") or msg_data.get("id") or "").strip()
             if not event_id:
                 return None
 
@@ -834,7 +849,9 @@ class UsgsPancakesParser(BaseParser):
                 or msg_data.get("place_name")
                 or ""
             ).strip()
-            info_type = str(msg_data.get("infoType") or msg_data.get("infoTypeName") or "").strip()
+            info_type = str(
+                msg_data.get("infoType") or msg_data.get("infoTypeName") or ""
+            ).strip()
             magnitude_type = str(msg_data.get("magnitudeType") or "").strip()
             url = str(msg_data.get("url") or "").strip()
 
@@ -850,8 +867,14 @@ class UsgsPancakesParser(BaseParser):
                 fallback_to_original=True,
             )
 
-            origin_time_raw = msg_data.get("originTimeMs") or msg_data.get("originTimeIso") or msg_data.get("originTime")
-            occurred_at = TimeConverter.parse_datetime(origin_time_raw) or datetime.now(timezone.utc)
+            origin_time_raw = (
+                msg_data.get("originTimeMs")
+                or msg_data.get("originTimeIso")
+                or msg_data.get("originTime")
+            )
+            occurred_at = TimeConverter.parse_datetime(origin_time_raw) or datetime.now(
+                timezone.utc
+            )
 
             # 发布时间取最近更新时间 lastUpdateMs；updatedTime* 仅作历史形态兜底
             updated_time_raw = (
@@ -865,8 +888,12 @@ class UsgsPancakesParser(BaseParser):
             source_entry = get_source_entry(self.source_id)
             metadata = {
                 "source_family": "global_quake",
-                "source_enum": source_entry.source_enum if source_entry else "pancakes_usgs",
-                "source_type": source_entry.source_type.value if source_entry else "earthquake_info",
+                "source_enum": source_entry.source_enum
+                if source_entry
+                else "pancakes_usgs",
+                "source_type": source_entry.source_type.value
+                if source_entry
+                else "earthquake_info",
                 "event_id": event_id,
                 "info_type": info_type,
                 "magnitude_type": magnitude_type,
@@ -889,13 +916,21 @@ class UsgsPancakesParser(BaseParser):
                 event_id=event_id,
                 source_id=self.source_id,
                 event_type="earthquake",
-                provider_family=source_entry.provider_family.value if source_entry else "global_quake",
-                source_enum=source_entry.source_enum if source_entry else "pancakes_usgs",
+                provider_family=source_entry.provider_family.value
+                if source_entry
+                else "global_quake",
+                source_enum=source_entry.source_enum
+                if source_entry
+                else "pancakes_usgs",
                 published_at=published_at,
                 aliases=(event_id,),
                 attributes={
-                    "parser_name": self.source_entry.parser_name if self.source_entry else "usgs_pancakes_parser",
-                    "config_key": source_entry.config_key if source_entry else "usgs_earthquake",
+                    "parser_name": self.source_entry.parser_name
+                    if self.source_entry
+                    else "usgs_pancakes_parser",
+                    "config_key": source_entry.config_key
+                    if source_entry
+                    else "usgs_earthquake",
                 },
             )
 
@@ -905,7 +940,9 @@ class UsgsPancakesParser(BaseParser):
                 received_at=datetime.now(timezone.utc),
                 payload=SourcePayload(
                     source_id=self.source_id,
-                    provider_family=source_entry.provider_family.value if source_entry else "global_quake",
+                    provider_family=source_entry.provider_family.value
+                    if source_entry
+                    else "global_quake",
                     message_type="usgs",
                     raw=dict(msg_data),
                     attributes=dict(metadata),
@@ -917,8 +954,11 @@ class UsgsPancakesParser(BaseParser):
                 f"[灾害预警] USGS 地震测定 (Pancakes) 解析成功: {domain_event.place_name} (M {domain_event.magnitude})",
                 is_event_linked=True,
                 event_stream="earthquake",
+                is_silent_window=True,
             )
             return envelope
         except Exception as exc:
-            plugin_logger.error(f"[灾害预警] {self.source_id} 解析 USGS 数据失败: {exc}")
+            plugin_logger.error(
+                f"[灾害预警] {self.source_id} 解析 USGS 数据失败: {exc}"
+            )
             return None

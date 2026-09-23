@@ -13,10 +13,10 @@ from .china_earthquake_parser import (
     CencEarthquakeWolfxParser,
 )
 from .china_eew_parser import (
+    CeaEewJianProjectParser,
     CEAEEWParser,
     CEAEEWPRParser,
     CEAEEWWolfxParser,
-    CeaEewJianProjectParser,
 )
 from .china_intensity_report_eqsc_parser import CencIntensityReportEqscParser
 from .china_intensity_report_parser import CencIntensityReportParser

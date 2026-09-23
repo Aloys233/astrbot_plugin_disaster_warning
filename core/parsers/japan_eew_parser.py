@@ -741,8 +741,12 @@ class JmaEewJianProjectParser(BaseParser):
             source_entry = get_source_entry(self.source_id)
             metadata = {
                 "source_family": "jian_project",
-                "source_enum": source_entry.source_enum if source_entry else "jian_project_jma",
-                "source_type": source_entry.source_type.value if source_entry else "earthquake_warning",
+                "source_enum": source_entry.source_enum
+                if source_entry
+                else "jian_project_jma",
+                "source_type": source_entry.source_type.value
+                if source_entry
+                else "earthquake_warning",
                 "event_id": event_id,
                 "report_num": report_num,
                 "updates": report_num,
@@ -767,15 +771,23 @@ class JmaEewJianProjectParser(BaseParser):
                 event_id=event_id,
                 source_id=self.source_id,
                 event_type="earthquake_warning",
-                provider_family=source_entry.provider_family.value if source_entry else "jian_project",
-                source_enum=source_entry.source_enum if source_entry else "jian_project_jma",
+                provider_family=source_entry.provider_family.value
+                if source_entry
+                else "jian_project",
+                source_enum=source_entry.source_enum
+                if source_entry
+                else "jian_project_jma",
                 report_num=report_num,
                 published_at=occurred_at,
                 is_final=is_final,
                 aliases=(event_id,),
                 attributes={
-                    "parser_name": self.source_entry.parser_name if self.source_entry else "japan_eew_parser",
-                    "config_key": source_entry.config_key if source_entry else "japan_jma_eew",
+                    "parser_name": self.source_entry.parser_name
+                    if self.source_entry
+                    else "japan_eew_parser",
+                    "config_key": source_entry.config_key
+                    if source_entry
+                    else "japan_jma_eew",
                 },
             )
 
@@ -785,7 +797,9 @@ class JmaEewJianProjectParser(BaseParser):
                 received_at=datetime.now(timezone.utc),
                 payload=SourcePayload(
                     source_id=self.source_id,
-                    provider_family=source_entry.provider_family.value if source_entry else "jian_project",
+                    provider_family=source_entry.provider_family.value
+                    if source_entry
+                    else "jian_project",
                     message_type="jma-eew",
                     raw=dict(msg_data),
                     attributes=dict(metadata),
@@ -839,9 +853,7 @@ class JmaEewPancakesParser(BaseParser):
                 report_num = 1
 
             title = str(
-                msg_data.get("Title")
-                or msg_data.get("title")
-                or "緊急地震速報"
+                msg_data.get("Title") or msg_data.get("title") or "緊急地震速報"
             ).strip()
 
             action = str(outer.get("action") or "").strip().lower()
@@ -870,10 +882,14 @@ class JmaEewPancakesParser(BaseParser):
             ).strip()
 
             latitude = safe_float_convert(
-                msg_data.get("Latitude") if msg_data.get("Latitude") is not None else msg_data.get("latitude")
+                msg_data.get("Latitude")
+                if msg_data.get("Latitude") is not None
+                else msg_data.get("latitude")
             )
             longitude = safe_float_convert(
-                msg_data.get("Longitude") if msg_data.get("Longitude") is not None else msg_data.get("longitude")
+                msg_data.get("Longitude")
+                if msg_data.get("Longitude") is not None
+                else msg_data.get("longitude")
             )
 
             mag_val = (
@@ -887,7 +903,9 @@ class JmaEewPancakesParser(BaseParser):
             )
             magnitude = safe_float_convert(mag_val)
             depth = safe_float_convert(
-                msg_data.get("Depth") if msg_data.get("Depth") is not None else msg_data.get("depth")
+                msg_data.get("Depth")
+                if msg_data.get("Depth") is not None
+                else msg_data.get("depth")
             )
 
             # 最大预测烈度（震度）
@@ -903,19 +921,26 @@ class JmaEewPancakesParser(BaseParser):
                 or msg_data.get("originTime")
                 or msg_data.get("originTimeMs")
             )
-            occurred_at = TimeConverter.parse_datetime(origin_time_raw) or datetime.now(timezone.utc)
-
-            announced_time_raw = (
-                msg_data.get("AnnouncedTime")
-                or msg_data.get("announcedTime")
+            occurred_at = TimeConverter.parse_datetime(origin_time_raw) or datetime.now(
+                timezone.utc
             )
-            published_at = TimeConverter.parse_datetime(announced_time_raw) or occurred_at
+
+            announced_time_raw = msg_data.get("AnnouncedTime") or msg_data.get(
+                "announcedTime"
+            )
+            published_at = (
+                TimeConverter.parse_datetime(announced_time_raw) or occurred_at
+            )
 
             source_entry = get_source_entry(self.source_id)
             metadata = {
                 "source_family": "global_quake",
-                "source_enum": source_entry.source_enum if source_entry else "pancakes_jma_eew",
-                "source_type": source_entry.source_type.value if source_entry else "earthquake_warning",
+                "source_enum": source_entry.source_enum
+                if source_entry
+                else "pancakes_jma_eew",
+                "source_type": source_entry.source_type.value
+                if source_entry
+                else "earthquake_warning",
                 "report_num": report_num,
                 "is_final": is_final,
                 "is_cancel": is_cancel,
@@ -940,15 +965,23 @@ class JmaEewPancakesParser(BaseParser):
                 event_id=event_id,
                 source_id=self.source_id,
                 event_type="earthquake_warning",
-                provider_family=source_entry.provider_family.value if source_entry else "global_quake",
-                source_enum=source_entry.source_enum if source_entry else "pancakes_jma_eew",
+                provider_family=source_entry.provider_family.value
+                if source_entry
+                else "global_quake",
+                source_enum=source_entry.source_enum
+                if source_entry
+                else "pancakes_jma_eew",
                 report_num=report_num,
                 published_at=published_at,
                 is_final=is_final,
                 aliases=(event_id,),
                 attributes={
-                    "parser_name": self.source_entry.parser_name if self.source_entry else "jma_pancakes_parser",
-                    "config_key": source_entry.config_key if source_entry else "japan_jma_eew",
+                    "parser_name": self.source_entry.parser_name
+                    if self.source_entry
+                    else "jma_pancakes_parser",
+                    "config_key": source_entry.config_key
+                    if source_entry
+                    else "japan_jma_eew",
                 },
             )
 
@@ -958,7 +991,9 @@ class JmaEewPancakesParser(BaseParser):
                 received_at=datetime.now(timezone.utc),
                 payload=SourcePayload(
                     source_id=self.source_id,
-                    provider_family=source_entry.provider_family.value if source_entry else "global_quake",
+                    provider_family=source_entry.provider_family.value
+                    if source_entry
+                    else "global_quake",
                     message_type="jma_eew",
                     raw=dict(msg_data),
                     attributes=dict(metadata),
@@ -971,8 +1006,11 @@ class JmaEewPancakesParser(BaseParser):
                 f"(M {domain_event.magnitude}, 震度 {domain_event.scale}) 第{report_num}报",
                 is_event_linked=True,
                 event_stream="earthquake",
+                is_silent_window=True,
             )
             return envelope
         except Exception as exc:
-            plugin_logger.error(f"[灾害预警] {self.source_id} 解析 JMA EEW 数据失败: {exc}")
+            plugin_logger.error(
+                f"[灾害预警] {self.source_id} 解析 JMA EEW 数据失败: {exc}"
+            )
             return None

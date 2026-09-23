@@ -141,19 +141,19 @@
       "jian_project": {
         "description": "Jian Project WebSocket 数据源",
         "type": "object",
-        "hint": "Jian Project 聚合 WebSocket 数据源（api.sismotide.top/all）。需配置登录密钥（lk_ 开头）或长期 Token（rt_ 开头）",
+        "hint": "Jian Project 聚合 WebSocket 数据源。需配置登录密钥或长期 Token",
         "items": {
           "enabled": {
             "description": "启用 Jian Project 数据源",
             "type": "bool",
             "default": false,
-            "hint": "启用后将连接 Jian Project WebSocket (/all)。需配置下方登录密钥，否则会跳过建连"
+            "hint": "启用后将连接 Jian Project WebSocket。需配置下方登录密钥，否则会跳过建连"
           },
           "login_key": {
             "description": "Jian Project 登录密钥",
             "type": "string",
             "default": "",
-            "hint": "在 https://auth.sismotide.top/ 输入 QQ 邮箱申请登录密钥（邮件送达，以 lk_ 开头，5分钟有效一次性）。填入后插件会自动换取长期 Token (rt_...) 并持久化保存"
+            "hint": "在 https://auth.sismotide.top/ 输入 QQ 邮箱申请登录密钥（邮件送达，以 lk_ 开头，5分钟有效一次性）。填入后插件会自动换取长期 Token 并持久化保存"
           },
           "china_earthquake_warning": {
             "description": "中国地震预警网（CEA）",
@@ -291,19 +291,19 @@
           "japan_jma_eew": {
             "description": "日本気象庁：緊急地震速報",
             "type": "bool",
-            "default": true,
-            "hint": "通过 PancakesAPI 接收日本气象厅紧急地震速报（JMA EEW）"
+            "default": false,
+            "hint": "通过 PancakesAPI 接收日本气象厅紧急地震速报"
           },
           "japan_jma_earthquake": {
             "description": "日本気象庁：地震情報",
             "type": "bool",
-            "default": true,
-            "hint": "通过 PancakesAPI 接收日本气象厅地震情报列表（JMA EQLIST）"
+            "default": false,
+            "hint": "通过 PancakesAPI 接收日本气象厅地震情报列表"
           },
           "usgs_earthquake": {
             "description": "美国地质调查局（USGS 地震测定）",
             "type": "bool",
-            "default": true,
+            "default": false,
             "hint": "通过 PancakesAPI 接收美国地质调查局 (USGS) 地震测定数据"
           }
         }

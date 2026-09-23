@@ -9,6 +9,31 @@ from __future__ import annotations
 
 from .source_entry import FusionRole, ProviderFamily, SourceEntry, SourceType
 
+# 数据源配置组历史更名映射：旧组名 -> 当前规范组名。
+# 全局配置由 ConfigValidator 负责迁移，但会话 override 独立存储、不经过该校验器；
+# 读取时必须归一化，否则会话写入的旧组名开关会被规则按规范组名查找时忽略，
+# 造成“会话已关闭该子源却仍被推送”的静默失效（如 Pancakes/Global Quake）。
+CONFIG_GROUP_ALIASES: dict[str, str] = {
+    "openquake_api": "pancakes_api",
+    "global_quake": "pancakes_api",
+}
+
+
+def normalize_config_group(group_name: str) -> str:
+    """把历史配置组名归一化为当前规范组名。"""
+    return CONFIG_GROUP_ALIASES.get(
+        (group_name or "").strip(), (group_name or "").strip()
+    )
+
+
+def get_legacy_group_names(canonical_group: str) -> tuple[str, ...]:
+    """返回映射到指定规范组名的全部历史别名组名。"""
+    canonical = (canonical_group or "").strip()
+    return tuple(
+        legacy for legacy, target in CONFIG_GROUP_ALIASES.items() if target == canonical
+    )
+
+
 # 统一数据源注册表目录，保存了系统中所有支持接入的数据源及其配置、路由和展示的元数据。
 SOURCE_CATALOG: dict[str, SourceEntry] = {
     # cea_fanstudio: 中国地震预警网 - 来自 FAN Studio
@@ -361,8 +386,8 @@ SOURCE_CATALOG: dict[str, SourceEntry] = {
         parser_name="jma_pancakes_parser",
         presentation_type="earthquake_eew",
         text_presenter_key="jma_eew",
-        report_policy="eew",
-        intensity_mode="shindo",
+        report_policy="jma",
+        intensity_mode="scale",
         priority=1,
         display_name="日本気象庁：緊急地震速報",
         description="PancakesAPI WebSocket (/api/v1/alert/ws/all) 接收日本气象厅紧急地震速报 (source=jma_eew)",
@@ -391,7 +416,7 @@ SOURCE_CATALOG: dict[str, SourceEntry] = {
         presentation_type="earthquake_report",
         text_presenter_key="jma_report",
         report_policy="none",
-        intensity_mode="shindo",
+        intensity_mode="scale",
         priority=2,
         display_name="日本気象庁：地震情報",
         description="PancakesAPI WebSocket (/api/v1/alert/ws/all) 接收日本气象厅地震情报列表 (source=jma_eqlist)",
@@ -419,7 +444,7 @@ SOURCE_CATALOG: dict[str, SourceEntry] = {
         presentation_type="earthquake_report",
         text_presenter_key="usgs_report",
         report_policy="none",
-        intensity_mode="mmi",
+        intensity_mode="magnitude",
         priority=3,
         display_name="美国地质调查局（USGS 地震测定）",
         description="PancakesAPI WebSocket (/api/v1/alert/ws/all) 接收 USGS 地震测定 (source=usgs)",

@@ -109,15 +109,26 @@ class WeatherRule(BaseRule):
                 keyword for keyword in keywords if keyword in headline_text
             ]
 
-            province_val = str(metadata.get("province") or payload.get("province") or "").strip()
+            province_val = str(
+                metadata.get("province") or payload.get("province") or ""
+            ).strip()
             city_val = str(metadata.get("city") or payload.get("city") or "").strip()
-            district_val = str(metadata.get("district") or payload.get("district") or "").strip()
+            district_val = str(
+                metadata.get("district") or payload.get("district") or ""
+            ).strip()
             geo_text = f"{province_val} {city_val} {district_val}".strip()
 
             geo_hits = [
-                keyword for keyword in keywords
+                keyword
+                for keyword in keywords
                 if (geo_text and keyword in geo_text)
-                or (province_val and (keyword == province_val or keyword == province_short(province_val)))
+                or (
+                    province_val
+                    and (
+                        keyword == province_val
+                        or keyword == province_short(province_val)
+                    )
+                )
             ]
 
             if not title_hits and not headline_hits and not geo_hits:

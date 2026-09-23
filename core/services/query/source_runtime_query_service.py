@@ -9,7 +9,7 @@ from collections import defaultdict
 from typing import Any
 
 from ...sources.display_registry import CONNECTION_DISPLAY_NAMES, CONNECTION_GROUP_ALIAS
-from ...sources.source_catalog import SOURCE_CATALOG
+from ...sources.source_catalog import SOURCE_CATALOG, get_legacy_group_names
 from ...sources.source_entry import SourceEntry
 from ..config.config_service import ConfigAccessor
 
@@ -32,10 +32,17 @@ class SourceRuntimeQueryService:
         return self.config_accessor.data_sources_config()
 
     def _group_config(self, config_group: str) -> dict[str, Any]:
-        """获取指定数据源分组的配置。"""
+        """获取指定数据源分组的配置，兼容历史组名。"""
         data_sources = self._data_sources_config()
-        value = data_sources.get(config_group, {})
-        return value if isinstance(value, dict) else {}
+        merged: dict[str, Any] = {}
+        for legacy in get_legacy_group_names(config_group):
+            legacy_cfg = data_sources.get(legacy)
+            if isinstance(legacy_cfg, dict):
+                merged.update(legacy_cfg)
+        canonical_cfg = data_sources.get(config_group)
+        if isinstance(canonical_cfg, dict):
+            merged.update(canonical_cfg)
+        return merged
 
     def is_source_enabled(self, source_id: str) -> bool:
         """判断指定数据源是否在当前配置中启用。"""
@@ -165,7 +172,9 @@ class SourceRuntimeQueryService:
         # 建连失败/服务停止后任务名仍可能残留，无法代表真实连通性。
         # actual_connections 由 ws_manager 实时维护 connected 状态，作为首选口径；
         # 任务名检查仅作为连接状态缺失时的兜底。
-        pc_status = actual_connections.get("pancakes_api") or actual_connections.get("openquake_api")
+        pc_status = actual_connections.get("pancakes_api") or actual_connections.get(
+            "openquake_api"
+        )
         pancakes_connected = bool(
             isinstance(pc_status, dict) and pc_status.get("connected")
         )
@@ -174,7 +183,10 @@ class SourceRuntimeQueryService:
                 getattr(service, "connection_tasks", []) if service is not None else []
             )
             pancakes_connected = any(
-                ("pancakes_api" in task.get_name() or "openquake_api" in task.get_name())
+                (
+                    "pancakes_api" in task.get_name()
+                    or "openquake_api" in task.get_name()
+                )
                 if hasattr(task, "get_name")
                 else False
                 for task in connection_tasks
@@ -237,7 +249,9 @@ class SourceRuntimeQueryService:
         # 避免数据源被临时关闭后从分母消失，出现 6/6 而非 6/7。
         # expected_groups 已包含 WS（FAN/P2P/Wolfx/GQ）与 HTTP（EQSC/S-Net）。
         is_connected = bool(
-            pancakes_connected if pancakes_connected is not None else openquake_connected
+            pancakes_connected
+            if pancakes_connected is not None
+            else openquake_connected
         )
         return {
             "running": running,

@@ -419,7 +419,9 @@ class JmaEqlistPancakesParser(BaseParser):
             status = str(msg_data.get("status") or "").strip()
             info_type = str(msg_data.get("infoType") or "").strip()
 
-            is_cancel = bool(action == "cancelled" or status == "取消" or info_type == "取消")
+            is_cancel = bool(
+                action == "cancelled" or status == "取消" or info_type == "取消"
+            )
 
             place_name = str(
                 msg_data.get("placeName")
@@ -428,10 +430,26 @@ class JmaEqlistPancakesParser(BaseParser):
                 or ""
             ).strip()
 
-            latitude = safe_float_convert(msg_data.get("latitude") if msg_data.get("latitude") is not None else msg_data.get("Latitude"))
-            longitude = safe_float_convert(msg_data.get("longitude") if msg_data.get("longitude") is not None else msg_data.get("Longitude"))
-            depth = safe_float_convert(msg_data.get("depth") if msg_data.get("depth") is not None else msg_data.get("Depth"))
-            magnitude = safe_float_convert(msg_data.get("magnitude") if msg_data.get("magnitude") is not None else msg_data.get("Magnitude"))
+            latitude = safe_float_convert(
+                msg_data.get("latitude")
+                if msg_data.get("latitude") is not None
+                else msg_data.get("Latitude")
+            )
+            longitude = safe_float_convert(
+                msg_data.get("longitude")
+                if msg_data.get("longitude") is not None
+                else msg_data.get("Longitude")
+            )
+            depth = safe_float_convert(
+                msg_data.get("depth")
+                if msg_data.get("depth") is not None
+                else msg_data.get("Depth")
+            )
+            magnitude = safe_float_convert(
+                msg_data.get("magnitude")
+                if msg_data.get("magnitude") is not None
+                else msg_data.get("Magnitude")
+            )
 
             max_intensity = (
                 msg_data.get("maxIntensity")
@@ -440,17 +458,33 @@ class JmaEqlistPancakesParser(BaseParser):
             )
             scale = ScaleConverter.parse_jma_cwa_scale(max_intensity)
 
-            origin_time_raw = msg_data.get("originTime") or msg_data.get("OriginTime") or msg_data.get("originTimeMs")
-            occurred_at = TimeConverter.parse_datetime(origin_time_raw) or datetime.now(timezone.utc)
+            origin_time_raw = (
+                msg_data.get("originTime")
+                or msg_data.get("OriginTime")
+                or msg_data.get("originTimeMs")
+            )
+            occurred_at = TimeConverter.parse_datetime(origin_time_raw) or datetime.now(
+                timezone.utc
+            )
 
-            announced_time_raw = msg_data.get("announcedTime") or msg_data.get("reportTime") or msg_data.get("targetTime")
-            published_at = TimeConverter.parse_datetime(announced_time_raw) or occurred_at
+            announced_time_raw = (
+                msg_data.get("announcedTime")
+                or msg_data.get("reportTime")
+                or msg_data.get("targetTime")
+            )
+            published_at = (
+                TimeConverter.parse_datetime(announced_time_raw) or occurred_at
+            )
 
             source_entry = get_source_entry(self.source_id)
             metadata = {
                 "source_family": "global_quake",
-                "source_enum": source_entry.source_enum if source_entry else "pancakes_jma_eqlist",
-                "source_type": source_entry.source_type.value if source_entry else "earthquake_info",
+                "source_enum": source_entry.source_enum
+                if source_entry
+                else "pancakes_jma_eqlist",
+                "source_type": source_entry.source_type.value
+                if source_entry
+                else "earthquake_info",
                 "telegram": telegram,
                 "title": title,
                 "headline": headline,
@@ -476,13 +510,21 @@ class JmaEqlistPancakesParser(BaseParser):
                 event_id=event_id,
                 source_id=self.source_id,
                 event_type="earthquake",
-                provider_family=source_entry.provider_family.value if source_entry else "global_quake",
-                source_enum=source_entry.source_enum if source_entry else "pancakes_jma_eqlist",
+                provider_family=source_entry.provider_family.value
+                if source_entry
+                else "global_quake",
+                source_enum=source_entry.source_enum
+                if source_entry
+                else "pancakes_jma_eqlist",
                 published_at=published_at,
                 aliases=(event_id,),
                 attributes={
-                    "parser_name": self.source_entry.parser_name if self.source_entry else "jma_eqlist_pancakes_parser",
-                    "config_key": source_entry.config_key if source_entry else "japan_jma_earthquake",
+                    "parser_name": self.source_entry.parser_name
+                    if self.source_entry
+                    else "jma_eqlist_pancakes_parser",
+                    "config_key": source_entry.config_key
+                    if source_entry
+                    else "japan_jma_earthquake",
                 },
             )
 
@@ -492,7 +534,9 @@ class JmaEqlistPancakesParser(BaseParser):
                 received_at=datetime.now(timezone.utc),
                 payload=SourcePayload(
                     source_id=self.source_id,
-                    provider_family=source_entry.provider_family.value if source_entry else "global_quake",
+                    provider_family=source_entry.provider_family.value
+                    if source_entry
+                    else "global_quake",
                     message_type="jma_eqlist",
                     raw=dict(msg_data),
                     attributes=dict(metadata),
@@ -505,8 +549,11 @@ class JmaEqlistPancakesParser(BaseParser):
                 f"(M {domain_event.magnitude}, 震度 {domain_event.scale}, 电文 {telegram})",
                 is_event_linked=True,
                 event_stream="earthquake",
+                is_silent_window=True,
             )
             return envelope
         except Exception as exc:
-            plugin_logger.error(f"[灾害预警] {self.source_id} 解析 JMA 地震情报失败: {exc}")
+            plugin_logger.error(
+                f"[灾害预警] {self.source_id} 解析 JMA 地震情报失败: {exc}"
+            )
             return None

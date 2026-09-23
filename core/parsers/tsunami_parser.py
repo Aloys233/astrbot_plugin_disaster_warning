@@ -687,7 +687,9 @@ class JmaTsunamiEqscParser(BaseParser):
 class ChinaTsunamiJianProjectParser(BaseParser):
     """自然资源部海啸预警中心海啸解析器 - Jian Project。"""
 
-    def __init__(self, message_logger=None, source_id: str = "china_tsunami_jianproject"):
+    def __init__(
+        self, message_logger=None, source_id: str = "china_tsunami_jianproject"
+    ):
         super().__init__(source_id, message_logger)
 
     def _parse_data(self, data: dict[str, Any]) -> EventEnvelope | None:
@@ -706,7 +708,9 @@ class ChinaTsunamiJianProjectParser(BaseParser):
                 return None
 
             origin_time_raw = str(msg_data.get("originTime") or "").strip()
-            issue_time = TimeConverter.parse_datetime(msg_data.get("originTime")) or datetime.now(timezone.utc)
+            issue_time = TimeConverter.parse_datetime(
+                msg_data.get("originTime")
+            ) or datetime.now(timezone.utc)
 
             # 缺失 Event ID 时按报文特征（编号、标题、震中地名、发震时间）拼合回退 ID。
             # 必须使用 originTime 原始字符串，不能用上面的 datetime.now 兜底值：
@@ -742,12 +746,18 @@ class ChinaTsunamiJianProjectParser(BaseParser):
                 "depth": safe_float_convert(msg_data.get("depth")),
                 "magnitude": safe_float_convert(msg_data.get("magnitude")),
                 "place_name": str(msg_data.get("place") or "").strip(),
-                "org_unit": str(msg_data.get("orgUnit") or "自然资源部海啸预警中心").strip(),
+                "org_unit": str(
+                    msg_data.get("orgUnit") or "自然资源部海啸预警中心"
+                ).strip(),
                 "description": str(msg_data.get("description") or "").strip(),
                 "details_url": str(msg_data.get("htmlUrl") or "").strip(),
                 "source_family": "jian_project",
-                "source_enum": source_entry.source_enum if source_entry else "jian_project_tsunami",
-                "source_type": source_entry.source_type.value if source_entry else "tsunami",
+                "source_enum": source_entry.source_enum
+                if source_entry
+                else "jian_project_tsunami",
+                "source_type": source_entry.source_type.value
+                if source_entry
+                else "tsunami",
             }
 
             domain_event = TsunamiEvent(
@@ -761,13 +771,21 @@ class ChinaTsunamiJianProjectParser(BaseParser):
                 event_id=event_id,
                 source_id=self.source_id,
                 event_type="tsunami",
-                provider_family=source_entry.provider_family.value if source_entry else "jian_project",
-                source_enum=source_entry.source_enum if source_entry else "jian_project_tsunami",
+                provider_family=source_entry.provider_family.value
+                if source_entry
+                else "jian_project",
+                source_enum=source_entry.source_enum
+                if source_entry
+                else "jian_project_tsunami",
                 published_at=issue_time,
                 aliases=tuple(item for item in (raw_event_id,) if item),
                 attributes={
-                    "parser_name": self.source_entry.parser_name if self.source_entry else "china_tsunami_parser",
-                    "config_key": source_entry.config_key if source_entry else "china_tsunami",
+                    "parser_name": self.source_entry.parser_name
+                    if self.source_entry
+                    else "china_tsunami_parser",
+                    "config_key": source_entry.config_key
+                    if source_entry
+                    else "china_tsunami",
                 },
             )
 
@@ -777,7 +795,9 @@ class ChinaTsunamiJianProjectParser(BaseParser):
                 received_at=datetime.now(timezone.utc),
                 payload=SourcePayload(
                     source_id=self.source_id,
-                    provider_family=source_entry.provider_family.value if source_entry else "jian_project",
+                    provider_family=source_entry.provider_family.value
+                    if source_entry
+                    else "jian_project",
                     message_type="nmefc-tsunami",
                     raw=dict(msg_data),
                     attributes=dict(metadata),
@@ -789,6 +809,7 @@ class ChinaTsunamiJianProjectParser(BaseParser):
                 f"[灾害预警] 海啸预警解析成功: {domain_event.title}, 等级: {domain_event.level}",
                 is_event_linked=True,
                 event_stream="tsunami",
+                is_silent_window=True,
             )
             return envelope
         except Exception as exc:
