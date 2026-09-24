@@ -301,6 +301,9 @@ class PluginCommandSupportService:
             if kv is not None:
                 key, raw_value = kv
                 if key == "scope":
+                    if not raw_value:
+                        result["error"] = "生效范围的取值不能为空"
+                        return result
                     scope = cls._LOCATION_SCOPE_ALIASES.get(raw_value.lower())
                     if scope is not None:
                         result["scope"] = scope
@@ -309,6 +312,12 @@ class PluginCommandSupportService:
                         return result
                     continue
                 if key == "place_name":
+                    # 空地名必须显式报错：若放行空串，place_parts 会变为非空列表，
+                    # 从而绕过下方“全部缺失”校验，最终返回空地名 + 空坐标，
+                    # 命令侧会谎报更新成功却没有任何字段被写入。
+                    if not raw_value:
+                        result["error"] = "地名的取值不能为空"
+                        return result
                     place_parts.append(raw_value)
                     continue
                 if not raw_value:
@@ -396,12 +405,16 @@ class PluginCommandSupportService:
         if longitude is not None and not -180.0 <= longitude <= 180.0:
             result["error"] = f"经度 {longitude} 超出有效范围 -180 ~ 180"
             return result
+        # 地名先拼接并去除首尾空白后再参与判定：只有“真·非空”的地名
+        # 才算提供了有效内容，避免地名片段全为空白时绕过校验。
+        place_name = " ".join(place_parts).strip()
+
         # 仅当坐标与地名“全部缺失”时才算解析失败。
-        if latitude is None and longitude is None and not place_parts:
+        if latitude is None and longitude is None and not place_name:
             result["error"] = "至少需要提供纬度、经度或地名之一"
             return result
 
         result["latitude"] = latitude
         result["longitude"] = longitude
-        result["place_name"] = " ".join(place_parts).strip()
+        result["place_name"] = place_name
         return result
