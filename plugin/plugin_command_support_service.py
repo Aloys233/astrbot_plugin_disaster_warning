@@ -237,6 +237,23 @@ class PluginCommandSupportService:
                 return None
         return None
 
+    @staticmethod
+    def _looks_like_explicit_kv(token: str) -> bool:
+        """判断 token 是否形如键值对（含半角 = 或全角 ＝）。
+
+        与 _split_explicit_kv 互补：后者只对“键名可识别”的键值对返回结果，
+        本方法用于识别“形如键值对但键名未知”的输入，避免其被静默当作地名。
+        """
+        return "=" in token or "＝" in token
+
+    @staticmethod
+    def _extract_kv_raw_key(token: str) -> str:
+        """提取形如 键=值 的 token 中的原始键名（用于错误提示）。"""
+        for separator in ("=", "＝"):
+            if separator in token:
+                return token.partition(separator)[0].strip()
+        return token
+
     @classmethod
     def parse_set_location_args(
         cls,
@@ -249,10 +266,12 @@ class PluginCommandSupportService:
 
         1. 显式键值对 `lat=` / `纬度=` / `lon=` / `经度=` / `地名=` / `范围=`
            → 直接落到对应字段，语义无歧义（推荐用于只修正单个坐标的场景）；
-        2. 形如 UMO 的参数 → 生效范围「指定会话」，并记录目标会话；
-        3. 命中范围别名的参数 → 生效范围「全局」或「当前会话」；
-        4. 可解析为有限浮点数的参数 → 按出现顺序收集为裸坐标；
-        5. 剩余参数 → 按顺序拼接为自定义地名。
+        2. 含 `=` / `＝` 但键名未识别 → 直接报错。避免 `scop=当前会话`
+           这类键名拼写错误被静默当作地名，进而误写为全局地名；
+        3. 形如 UMO 的参数 → 生效范围「指定会话」，并记录目标会话；
+        4. 命中范围别名的参数 → 生效范围「全局」或「当前会话」；
+        5. 可解析为有限浮点数的参数 → 按出现顺序收集为裸坐标；
+        6. 剩余参数 → 按顺序拼接为自定义地名。
 
         裸坐标分配规则（仅当未使用显式键值对时生效）：
         - 2 个裸坐标：第 1 个为纬度、第 2 个为经度，顺序疑似颠倒时自动纠偏；
@@ -329,6 +348,19 @@ class PluginCommandSupportService:
                     return result
                 explicit[key] = value
                 continue
+
+            # 含等号但键名未识别：必须显式报错，不能作为地名静默接受。
+            if cls._looks_like_explicit_kv(token):
+                raw_key = cls._extract_kv_raw_key(token)
+                if raw_key:
+                    result["error"] = (
+                        f"未识别的参数键「{raw_key}」，可用键："
+                        "lat/latitude/纬度、lon/lng/longitude/经度、"
+                        "地名/位置/name、范围/scope"
+                    )
+                else:
+                    result["error"] = "无法识别的参数格式"
+                return result
 
             # 2) 指定会话 UMO：含冒号且形态匹配，不作为地名候选。
             if cls._looks_like_session_umo(token):
