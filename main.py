@@ -292,6 +292,7 @@ class DisasterWarningPlugin(Star):
                 "• /灾害预警统计 / 灾害预警统计清除\n"
                 "• /灾害预警推送开关 - 会话推送开关\n"
                 "• /灾害预警配置 查看 [全局|当前|<会话UMO>]\n"
+                "• /设置所在地 [纬度] [经度] [地名] [范围]\n"
                 "• /灾害预警日志 / 日志开关 / 日志清除\n"
                 "• /服务器切换 - 查看/切换数据源主备服务器\n"
                 "• /重启AstrBot - 重启整个 AstrBot 进程\n"
@@ -787,6 +788,25 @@ class DisasterWarningPlugin(Star):
         """查看当前配置信息（支持按会话查看差异覆写）"""
         async for result in self._admin_command_service.handle_disaster_config(
             event, action=action, target=target
+        ):
+            yield result
+
+    @filter.command("设置所在地")
+    async def set_location(
+        self,
+        event: AstrMessageEvent,
+        arg1: str = None,
+        arg2: str = None,
+        arg3: str = None,
+        arg4: str = None,
+    ):
+        """设置本地监控的经纬度、地名与生效范围（仅管理员）"""
+        async for result in self._admin_command_service.handle_set_location(
+            event,
+            arg1=arg1,
+            arg2=arg2,
+            arg3=arg3,
+            arg4=arg4,
         ):
             yield result
 

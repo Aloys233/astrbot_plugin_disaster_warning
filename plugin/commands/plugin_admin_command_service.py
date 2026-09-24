@@ -1156,6 +1156,202 @@ class PluginAdminCommandService(CommandTelemetryMixin):
             logger.error(f"[灾害预警] 切换推送状态失败: {e}")
             yield event.plain_result(f"❌ 切换推送状态失败: {str(e)}")
 
+    @staticmethod
+    def _build_set_location_usage(reason: str = "") -> str:
+        """构造 /设置所在地 的用法提示（可附带解析失败原因）。"""
+        lines: list[str] = []
+        if reason:
+            lines.append(f"❌ 参数解析失败：{reason}")
+            lines.append("")
+        lines.extend(
+            [
+                "📍 /设置所在地 [纬度] [经度] [自定义地名] [生效范围]",
+                "",
+                "• 纬度、经度、地名至少要提供一项，其余参数均可留空；",
+                "  未提供的项沿用原值，不会被清空",
+                "• 两个坐标按「纬度 经度」顺序识别；",
+                "  只填一个时，绝对值大于 90 的自动判定为经度",
+                "• 生效范围：全局（默认）/ 当前会话 / 直接填写会话 UMO",
+                "",
+                "单独修改数值可用键值对写法消除歧义：",
+                "  /设置所在地 lat=39.9042",
+                "  /设置所在地 lon=116.4074 地名=北京",
+                "",
+                "示例：",
+                "  /设置所在地 39.9042 116.4074 北京",
+                "  /设置所在地 39.9042 116.4074 北京 当前会话",
+                "  /设置所在地 116.4074",
+                "  /设置所在地 139.7 35.7 东京 aiocqhttp:GroupMessage:123456",
+            ]
+        )
+        return "\n".join(lines)
+
+    async def handle_set_location(
+        self,
+        event,
+        arg1: str = None,
+        arg2: str = None,
+        arg3: str = None,
+        arg4: str = None,
+    ):
+        """处理 /设置所在地：写入本地监控经纬度、地名与生效范围。
+
+        采用增量更新语义，参数解析分两阶段：先确定生效范围，再按该范围读取当前生效的
+        local_monitoring 作为消歧上下文，从而准确支持“只修正其中一个坐标”。
+        """
+        if not await self.plugin.is_plugin_admin(event):
+            yield event.plain_result("🚫 权限不足：此命令仅限管理员使用。")
+            return
+
+        support = self.plugin._command_support_service
+        raw_args = [arg1, arg2, arg3, arg4]
+
+        # 阶段一：先确定生效范围与目标会话，参数错误在此提前拦截。
+        scope_probe = support.parse_set_location_args(raw_args)
+        if scope_probe.get("error"):
+            yield event.plain_result(
+                self._build_set_location_usage(scope_probe["error"])
+            )
+            return
+
+        scope = scope_probe["scope"]
+        scope_target = scope_probe["scope_target"]
+        is_global = scope == support.LOCATION_SCOPE_GLOBAL
+
+        mgr = self._get_session_config_manager()
+        if is_global:
+            session_umo = ""
+            raw_lm = self.plugin.config.get("local_monitoring")
+            existing_lm = dict(raw_lm) if isinstance(raw_lm, dict) else {}
+        else:
+            session_umo = (
+                scope_target
+                if scope == support.LOCATION_SCOPE_SESSION
+                else event.unified_msg_origin
+            )
+            if mgr is None or not session_umo:
+                yield event.plain_result(
+                    "❌ 无法写入会话级配置：会话配置管理器或目标会话不可用"
+                )
+                return
+            probe_effective = mgr.get_effective_config(session_umo)
+            raw_lm = probe_effective.get("local_monitoring")
+            existing_lm = dict(raw_lm) if isinstance(raw_lm, dict) else {}
+
+        # 阶段二：带上消歧上下文重新解析，正确识别“只修正其中一个坐标”。
+        parsed = support.parse_set_location_args(raw_args, existing_lm=existing_lm)
+        if parsed.get("error"):
+            yield event.plain_result(self._build_set_location_usage(parsed["error"]))
+            return
+
+        latitude = parsed["latitude"]
+        longitude = parsed["longitude"]
+        place_name = parsed["place_name"]
+
+        # 组装增量更新字段：仅覆盖本次显式提供的项。
+        updates: dict = {}
+        if latitude is not None:
+            updates["latitude"] = latitude
+        if longitude is not None:
+            updates["longitude"] = longitude
+        if place_name:
+            updates["place_name"] = place_name
+        # 仅当「本次写入了坐标」且「合并后的经纬度同时齐备」时才开启本地监控。
+        # 若只有一个坐标就置 enabled=True，距离与烈度将按赤道/本初子午线的虚假位置参与过滤，
+        # 静默污染本地预估结果，而配置面板上看不出任何异常。
+        if latitude is not None or longitude is not None:
+            merged_lat = updates.get("latitude", existing_lm.get("latitude"))
+            merged_lon = updates.get("longitude", existing_lm.get("longitude"))
+            if merged_lat is not None and merged_lon is not None:
+                updates["enabled"] = True
+
+        # 组装“本次变更”摘要，让用户明确知道哪几项被改写。
+        changed: list[str] = []
+        if latitude is not None:
+            changed.append(f"纬度→{latitude}")
+        if longitude is not None:
+            changed.append(f"经度→{longitude}")
+        if place_name:
+            changed.append(f"地名→{place_name}")
+
+        try:
+            if is_global:
+                current_lm = dict(existing_lm)
+                current_lm.update(updates)
+                self.plugin.config["local_monitoring"] = current_lm
+                # 全局配置落盘；session_config_manager 的 default_config_ref
+                # 持有同一 config 引用，写入后无需重载即可实时生效。
+                self.plugin.config.save_config()
+                final_lm = current_lm
+                scope_desc = "全局（所有会话）"
+            else:
+                # 会话补丁同样执行增量更新，保留该会话已有的其他覆写字段。
+                override = mgr.get_override(session_umo)
+                if not isinstance(override, dict):
+                    override = {}
+                session_lm = override.get("local_monitoring")
+                if not isinstance(session_lm, dict):
+                    session_lm = {}
+                session_lm.update(updates)
+                override["local_monitoring"] = session_lm
+                mgr.set_override(session_umo, override)
+
+                # 回读合并后的生效配置作为展示基准（未覆盖项来自全局默认值）。
+                effective = mgr.get_effective_config(session_umo)
+                merged_lm = effective.get("local_monitoring")
+                final_lm = merged_lm if isinstance(merged_lm, dict) else session_lm
+                scope_desc = mgr.get_session_log_str(session_umo)
+
+            lines = ["✅ 本地监控位置已更新", ""]
+            lines.append(f"📐 生效范围：{scope_desc}")
+            if changed:
+                lines.append(f"🔧 本次变更：{'、'.join(changed)}")
+            lines.append(f"• 纬度：{final_lm.get('latitude')}")
+            lines.append(f"• 经度：{final_lm.get('longitude')}")
+            lines.append(f"• 地名：{final_lm.get('place_name') or '本地'}")
+            lines.append(
+                f"• 本地监控：{'已开启' if final_lm.get('enabled') else '未开启'}"
+            )
+
+            if parsed.get("ambiguous"):
+                lines.append("")
+                lines.append(
+                    "💡 只填了一个数值，无法判断是纬度还是经度，已暂按纬度处理。"
+                )
+                lines.append("   若想修正经度，请用显式写法：/设置所在地 lon=116.4074")
+            if parsed.get("swapped"):
+                lines.append("")
+                lines.append("ℹ️ 检测到经纬度顺序疑似颠倒，已自动纠正为「纬度 经度」")
+            if final_lm.get("latitude") is None or final_lm.get("longitude") is None:
+                lines.append("")
+                lines.append(
+                    "⚠️ 本地监控需经纬度同时齐备才会开启，本次未开启。"
+                    "请补齐另一个坐标后再试。"
+                )
+
+            # 遥测仅上报布尔型是否存在坐标，不上报具体经纬度与地名，避免位置隐私外泄。
+            await self._track_command_feature(
+                "command_admin_action",
+                {
+                    "action": "set_location",
+                    "success": True,
+                    "scope": scope,
+                    "has_latitude": latitude is not None,
+                    "has_longitude": longitude is not None,
+                    "has_place_name": bool(place_name),
+                },
+            )
+            yield event.plain_result("\n".join(lines))
+            logger.info(
+                f"[灾害预警] 本地监控位置已更新（范围：{scope_desc}）："
+                f"纬度={final_lm.get('latitude')} 经度={final_lm.get('longitude')} "
+                f"地名={final_lm.get('place_name') or '本地'}"
+            )
+        except Exception as e:
+            logger.error(f"[灾害预警] 设置所在地失败: {e}")
+            await self._track_command_error(e, "set_location")
+            yield event.plain_result(f"❌ 设置所在地失败: {str(e)}")
+
     async def handle_disaster_config(
         self, event, action: str = None, target: str = None
     ):
