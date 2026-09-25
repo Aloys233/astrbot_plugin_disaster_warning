@@ -48,6 +48,19 @@ _HOME_PATH_RE = re.compile(r"/(?:home|Users|root)/[^/\s]+/")
 _ROOT_PATH_RE = re.compile(r"/root/")
 _WIN_HOME_PATH_RE = re.compile(r"[A-Za-z]:\\Users\\[^\\\s]+\\")
 
+# AstrBot 统一会话标识（UMO）：platform:MessageType:target，
+# MessageType 覆盖 GroupMessage/FriendMessage/PrivateMessage/GuildMessage
+# 及 DirectMessage/OtherMessage 等变体；可选尾部「 (备注名)」一并吞掉。
+_UMO_SESSION_RE = re.compile(
+    r"\b[\w-]+:[A-Za-z]+Message:[^\s'\"，。；；）)】\]]+(?:\s*\([^)]*\))?"
+)
+
+# 会话日志字符串（get_session_log_str 的输出格式）：私聊/群聊/未知类型 ID (备注名)，
+# 备注名可缺省。整段替换，避免群号、会话 ID 与会话备注名随报告外泄。
+_SESSION_LOG_STR_RE = re.compile(
+    r"(?:私聊|群聊|未知类型)\s*[A-Za-z0-9_@.\-]+\s*(?:\([^)]*\))?"
+)
+
 # 插件与 site-packages 前缀：只吃行内连续非空白前缀，
 # 避免对齐堆栈用的 .* 规则把长行中更早的内容一并吞掉。
 _PLUGIN_PATH_RE = re.compile(r"[^\s\"']*astrbot_plugin_disaster_warning[/\\]")
@@ -78,6 +91,17 @@ def sanitize_credential_assignments(text: str) -> str:
     return _CRED_BARE_VALUE_RE.sub(_mask_bare_value, text)
 
 
+def sanitize_session_identifiers(text: str) -> str:
+    """脱敏会话标识与配置的会话备注名（UMO 与 私聊/群聊 ID (名称) 两种形态）。
+
+    避免发送失败等异常消息中内嵌的群号、会话 ID 与会话备注名
+    随错误报告或日志导出外泄（对齐遥测对 target_sessions 等身份键的删除口径）。
+    """
+    text = _UMO_SESSION_RE.sub("<SESSION>", text)
+    text = _SESSION_LOG_STR_RE.sub("<SESSION>", text)
+    return text
+
+
 def sanitize_home_paths(text: str) -> str:
     """脱敏家目录绝对路径，隐藏宿主机用户名。"""
     text = _HOME_PATH_RE.sub("<USER_HOME>/", text)
@@ -94,12 +118,13 @@ def sanitize_plugin_paths(text: str) -> str:
 
 
 def sanitize_log_text(text: str) -> str:
-    """组合脱敏入口：URL 凭据 → 键值对凭据 → 家目录路径 → 插件路径。
+    """组合脱敏入口：URL 凭据 → 键值对凭据 → 会话标识 → 家目录路径 → 插件路径。
 
     供日志导出与错误报告构建统一调用，保证两条链路对外输出的脱敏口径一致。
     """
     text = sanitize_url_credentials(text)
     text = sanitize_credential_assignments(text)
+    text = sanitize_session_identifiers(text)
     text = sanitize_home_paths(text)
     text = sanitize_plugin_paths(text)
     return text
@@ -110,5 +135,6 @@ __all__ = [
     "sanitize_home_paths",
     "sanitize_log_text",
     "sanitize_plugin_paths",
+    "sanitize_session_identifiers",
     "sanitize_url_credentials",
 ]
