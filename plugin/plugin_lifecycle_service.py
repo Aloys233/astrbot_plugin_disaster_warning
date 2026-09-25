@@ -15,6 +15,11 @@ from astrbot.api import logger
 
 from ..core.app.disaster_service import stop_disaster_service
 from ..core.services.config.config_validation_service import ConfigValidator
+from ..core.services.error_report.error_report_service import (
+    close_error_report_service,
+    configure_error_report_service,
+)
+from ..core.services.paste.paste_client import close_paste_client
 from ..core.services.telemetry.telemetry_service import TelemetryManager
 from ..core.services.telemetry.telemetry_utils import track_error_safely
 from ..utils.banner import print_stop_summary
@@ -62,6 +67,9 @@ class PluginLifecycleService:
 
     def setup_telemetry(self) -> None:
         """初始化并注入遥测上报管理器。"""
+        # 错误报告自动上传与遥测同步装配（启用状态跟随遥测开关），
+        # 经 track_error_safely 统一挂钩后即可覆盖全部错误捕获点。
+        configure_error_report_service(dict(self.plugin.config), get_plugin_version())
         # 遥测初始化与主服务解耦，便于在生命周期阶段统一注入和关闭。
         self.plugin.telemetry = TelemetryManager(
             config=dict(self.plugin.config),
@@ -209,6 +217,16 @@ class PluginLifecycleService:
                 await self.plugin.telemetry.close()
             except Exception as te:
                 logger.debug(f"[灾害预警] 遥测会话关闭时出错（已忽略）: {te}")
+
+        # 错误报告服务与 paste 客户端各自独立回收，任一失败不影响后续清理。
+        try:
+            await close_error_report_service()
+        except Exception as ere:
+            logger.debug(f"[灾害预警] 关闭错误报告服务时出错（已忽略）: {ere}")
+        try:
+            await close_paste_client()
+        except Exception as pce:
+            logger.debug(f"[灾害预警] 关闭 Paste 客户端时出错（已忽略）: {pce}")
 
         if self.plugin.web_server:
             # 最后停止管理端 Web 服务器，避免外部仍尝试进行网络交互

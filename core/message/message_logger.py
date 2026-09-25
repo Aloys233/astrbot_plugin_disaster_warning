@@ -29,6 +29,7 @@ from .logging.formatters.message_json_formatter_service import (
 from .logging.formatters.message_readable_log_service import MessageReadableLogService
 from .logging.stores.log_file_store import LogFileStore
 from .logging.stores.log_stats_repository import LogStatsRepository
+from .logging.stores.log_tail_reader import LogTailReader, LogTailResult
 from .logging.stores.raw_message_logging_service import RawMessageLoggingService
 from .logging.support.message_log_helper_service import MessageLogHelperService
 from .logging.support.p2p_area_mapping_loader import P2PAreaMappingLoader
@@ -102,6 +103,7 @@ class MessageLogger:
             max_size_mb=self.max_size_mb,
             max_files=self.max_files,
         )
+        self._log_tail_reader = LogTailReader(self.log_file_path, self.max_files)
         self._log_summary_service = LogSummaryService()
         self._log_stats_repository = LogStatsRepository(self.stats_file)
         self._load_stats()  # 恢复持久化的日志过滤统计数据
@@ -286,6 +288,14 @@ class MessageLogger:
             max_files=self.max_files,
             max_size_mb=self.max_size_mb,
             filter_stats=self.filter_stats,
+        )
+
+    def read_recent_log_entries(
+        self, count: int, *, max_total_bytes: int
+    ) -> LogTailResult:
+        """读取最近的原始日志条目（新条目优先，受条数与总字节预算约束）。"""
+        return self._log_tail_reader.read_recent_entries(
+            count, max_total_bytes=max_total_bytes
         )
 
     def clear_logs(self):

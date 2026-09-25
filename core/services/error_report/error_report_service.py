@@ -1,0 +1,224 @@
+"""
+错误报告自动上传服务。
+
+插件捕获到错误时（经 track_error_safely 统一挂钩），把脱敏后的错误报告
+上传至自建 LogPaste 服务生成链接，并以 info 级别打印到日志，方便用户
+直接拿链接提交 issue。
+
+启用策略跟随遥测开关（telemetry_config.enabled）：用户拒绝匿名遥测时
+同样不上传错误报告，保持对外发送口径一致。本服务只做附加动作，
+不改变现有异常的抛出与日志行为。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import platform
+import time
+import traceback
+from datetime import datetime, timezone
+
+from astrbot.api import logger
+
+from ..paste.paste_client import format_expires_at, get_paste_client
+from ....utils.log_sanitizer import sanitize_log_text
+from ....utils.version import get_astrbot_version
+
+# 错误报告整体字符上限与堆栈截断长度。
+_MAX_REPORT_CHARS = 20000
+_MAX_STACK_CHARS = 6000
+
+# 同一「模块 + 异常类型」的上传最小间隔（秒），防错误风暴刷爆 paste 服务。
+_ERROR_THROTTLE_SECONDS = 60
+
+# 节流记录表容量上限，超过时清理已过冷却期的旧键，防止长期运行无限增长。
+_MAX_THROTTLE_KEYS = 256
+
+
+class ErrorReportService:
+    """错误报告构建与上传服务。"""
+
+    def __init__(
+        self,
+        *,
+        telemetry_enabled: bool,
+        plugin_version: str,
+        astrbot_version: str = "",
+    ):
+        # 启用状态跟随遥测开关，停机置位后拒绝新上传。
+        self._telemetry_enabled = telemetry_enabled
+        self._plugin_version = plugin_version
+        self._astrbot_version = astrbot_version
+        self._last_upload_times: dict[str, float] = {}
+        self._closed = False
+
+    @property
+    def enabled(self) -> bool:
+        """是否允许上传错误报告。"""
+        return self._telemetry_enabled and not self._closed
+
+    async def report_error(
+        self, exception: BaseException, module: str | None = None
+    ) -> str | None:
+        """构建并上传错误报告，成功返回链接（并输出 info 日志），否则返回 None。"""
+        if not self.enabled or not self._should_report(exception):
+            return None
+
+        throttle_key = f"{(module or 'unknown').lower()}:{type(exception).__name__}"
+        now = time.monotonic()
+        last = self._last_upload_times.get(throttle_key, 0.0)
+        if now - last < _ERROR_THROTTLE_SECONDS:
+            return None
+        self._last_upload_times[throttle_key] = now
+        self._trim_throttle_table(now)
+
+        report_text = self._build_report(exception, module)
+        try:
+            payload = await get_paste_client().upload_text(report_text)
+        except Exception as e:
+            # 上传失败仅留调试日志，不影响主流程。
+            logger.debug(f"[灾害预警] 错误报告上传失败（已忽略）: {e}")
+            return None
+
+        url = str(payload.get("url") or "")
+        if not url:
+            return None
+        expires_at = format_expires_at(payload.get("expires_at"))
+        logger.info(
+            f"[灾害预警] 已生成错误报告链接: {url}"
+            f"（模块: {module or 'unknown'}，异常: {type(exception).__name__}，"
+            f"过期: {expires_at}）"
+        )
+        return url
+
+    @staticmethod
+    def _should_report(exception: BaseException) -> bool:
+        """协程撤销/生成器回收/解释器退出不属于需要人工跟进的运行期错误。"""
+        return not isinstance(
+            exception, (asyncio.CancelledError, GeneratorExit, SystemExit)
+        )
+
+    def _trim_throttle_table(self, now: float) -> None:
+        """节流记录超限时清理已过冷却期的旧键。"""
+        if len(self._last_upload_times) <= _MAX_THROTTLE_KEYS:
+            return
+        cutoff = now - _ERROR_THROTTLE_SECONDS
+        self._last_upload_times = {
+            key: ts for key, ts in self._last_upload_times.items() if ts > cutoff
+        }
+
+    def _build_report(self, exception: BaseException, module: str | None) -> str:
+        """构建脱敏错误报告文本。"""
+        generated_at = (
+            datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        )
+        exc_type = type(exception).__name__
+        message = str(exception) or "（无消息内容）"
+
+        stack = "".join(
+            traceback.format_exception(
+                type(exception), exception, exception.__traceback__
+            )
+        )
+        if len(stack) > _MAX_STACK_CHARS:
+            stack = stack[:_MAX_STACK_CHARS] + "\n…（堆栈过长已截断）"
+        if not stack.strip():
+            stack = "（无堆栈信息）"
+
+        lines = [
+            "=== 灾害预警插件错误报告 ===",
+            f"生成时间: {generated_at}",
+            f"插件版本: {self._plugin_version}",
+            f"AstrBot 版本: {self._astrbot_version or '未知'}",
+            "运行环境: "
+            f"Python {platform.python_version()} / "
+            f"{platform.system()} {platform.release()} ({platform.machine()})",
+            f"错误模块: {module or 'unknown'}",
+            f"异常类型: {exc_type}",
+            "",
+            "--- 异常消息 ---",
+            message,
+            "",
+            "--- 异常堆栈 ---",
+            stack,
+            "",
+            "说明: 本报告由插件自动生成，已对凭据与本机路径脱敏，可直接附在 issue 中。",
+        ]
+        text = sanitize_log_text("\n".join(lines))
+        if len(text) > _MAX_REPORT_CHARS:
+            text = text[:_MAX_REPORT_CHARS] + "\n…（报告过长已截断）"
+        return text
+
+
+# 模块级单例：initialize 阶段统一装配，停机阶段置空。
+_error_report_service: ErrorReportService | None = None
+
+
+def configure_error_report_service(
+    config: dict, plugin_version: str
+) -> ErrorReportService:
+    """按插件配置装配全局错误报告服务（initialize 时调用）。
+
+    启用状态跟随遥测开关（telemetry_config.enabled）。
+    """
+    global _error_report_service
+    telemetry_config = (
+        config.get("telemetry_config", {}) if isinstance(config, dict) else {}
+    )
+    if not isinstance(telemetry_config, dict):
+        telemetry_config = {}
+    telemetry_enabled = bool(telemetry_config.get("enabled", True))
+    try:
+        astrbot_version = get_astrbot_version()
+    except Exception:
+        astrbot_version = ""
+
+    _error_report_service = ErrorReportService(
+        telemetry_enabled=telemetry_enabled,
+        plugin_version=plugin_version,
+        astrbot_version=astrbot_version,
+    )
+    logger.debug(
+        "[灾害预警] 错误报告自动上传已"
+        f"{'启用' if telemetry_enabled else '停用'}（跟随遥测开关）"
+    )
+    return _error_report_service
+
+
+def get_error_report_service() -> ErrorReportService | None:
+    """获取全局错误报告服务单例（未装配时返回 None）。"""
+    return _error_report_service
+
+
+async def report_error_safely(
+    exception: BaseException, *, module: str | None = None
+) -> None:
+    """安全生成错误报告链接（供 track_error_safely 统一挂钩）。
+
+    未装配或停用时静默跳过；任何失败都吞掉，绝不影响调用方的异常处理流程。
+    """
+    service = _error_report_service
+    if service is None:
+        return
+    try:
+        await service.report_error(exception, module=module)
+    except Exception as e:
+        logger.debug(f"[灾害预警] 错误报告生成失败（已忽略）: {e}")
+
+
+async def close_error_report_service() -> None:
+    """关闭全局错误报告服务（幂等）。"""
+    global _error_report_service
+    if _error_report_service is not None:
+        _error_report_service._closed = True
+        _error_report_service = None
+        logger.debug("[灾害预警] 已关闭错误报告自动上传服务")
+
+
+__all__ = [
+    "ErrorReportService",
+    "close_error_report_service",
+    "configure_error_report_service",
+    "get_error_report_service",
+    "report_error_safely",
+]

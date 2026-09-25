@@ -293,7 +293,7 @@ class DisasterWarningPlugin(Star):
                 "• /灾害预警推送开关 - 会话推送开关\n"
                 "• /灾害预警配置 查看 [全局|当前|<会话UMO>]\n"
                 "• /设置所在地 [纬度] [经度] [地名] [范围]\n"
-                "• /灾害预警日志 / 日志开关 / 日志清除\n"
+                "• /灾害预警日志 / 日志导出 [数量] / 日志开关 / 日志清除\n"
                 "• /服务器切换 - 查看/切换数据源主备服务器\n"
                 "• /重启AstrBot - 重启整个 AstrBot 进程\n"
                 "──────────────\n"
@@ -814,6 +814,14 @@ class DisasterWarningPlugin(Star):
     async def disaster_logs(self, event: AstrMessageEvent):
         """查看原始消息日志信息"""
         async for result in self._admin_command_service.handle_disaster_logs(event):
+            yield result
+
+    @filter.command("灾害预警日志导出", alias={"日志导出"})
+    async def disaster_log_export(self, event: AstrMessageEvent, count: str = None):
+        """导出最近日志（脱敏）并上传生成链接"""
+        async for result in self._admin_command_service.handle_disaster_log_export(
+            event, count_str=count
+        ):
             yield result
 
     @filter.command("灾害预警日志开关")
