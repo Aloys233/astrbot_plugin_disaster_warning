@@ -190,24 +190,46 @@ def get_error_report_service() -> ErrorReportService | None:
     return _error_report_service
 
 
+# 独立调度错误报告上传的后台任务集合：
+# 持强引用防止任务被 GC，完成（含失败/取消）后由回调自行移除。
+_pending_report_tasks: set[asyncio.Task[None]] = set()
+
+
+def _on_report_done(task: asyncio.Task[None]) -> None:
+    """上传任务结束回调：移除强引用并取回异常，避免未处理异常告警噪声。"""
+    _pending_report_tasks.discard(task)
+    if not task.cancelled() and task.exception() is not None:
+        # report_error 内部已全量吞异常，此处仅为兜底取回，理论上不会走到。
+        pass
+
+
 async def report_error_safely(
     exception: BaseException, *, module: str | None = None
 ) -> None:
     """安全生成错误报告链接（供 track_error_safely 统一挂钩）。
 
+    上传以**独立后台任务**尽力执行（fire-and-forget）：本函数立即返回，
+    不等待网络 I/O，粘贴服务缓慢或不可达时不会阻塞调用方的错误处理路径。
     未装配或停用时静默跳过；任何失败都吞掉，绝不影响调用方的异常处理流程。
     """
     service = _error_report_service
     if service is None:
         return
     try:
-        await service.report_error(exception, module=module)
-    except Exception as e:
-        logger.debug(f"[灾害预警] 错误报告生成失败（已忽略）: {e}")
+        task = asyncio.create_task(service.report_error(exception, module=module))
+    except RuntimeError:
+        # 无运行事件循环时无法调度（调用方均为异步上下文，不应发生），静默放弃。
+        return
+    _pending_report_tasks.add(task)
+    task.add_done_callback(_on_report_done)
 
 
 async def close_error_report_service() -> None:
-    """关闭全局错误报告服务（幂等）。"""
+    """关闭全局错误报告服务（幂等）。
+
+    在途上传任务不等待、不取消：它们持有服务实例的局部引用，
+    停机后若 paste 会话已关闭会自然失败并被内部吞掉（best-effort 语义）。
+    """
     global _error_report_service
     if _error_report_service is not None:
         _error_report_service._closed = True

@@ -41,8 +41,9 @@ async def track_error_safely(
 ) -> bool:
     """安全上报错误事件。"""
     # 附加动作：上传脱敏错误报告并生成链接（info 日志）。
-    # 内部自带开关（跟随遥测）/节流/噪声过滤，自身异常绝不外抛，
-    # 不影响下方原有遥测逻辑与调用方的异常处理流程。
+    # 内部以独立后台任务尽力执行（立即返回，不等待网络 I/O），
+    # 自带开关（跟随遥测）/节流/噪声过滤且全量吞异常，
+    # 不阻塞下方原有遥测逻辑与调用方的错误处理路径。
     await report_error_safely(exception, module=module)
     if not telemetry or not getattr(telemetry, "enabled", False):
         return False
