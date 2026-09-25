@@ -1066,7 +1066,10 @@ class PluginAdminCommandService(CommandTelemetryMixin):
         )
 
         try:
-            lines, truncated_by_size = get_runtime_log_collector().get_recent_lines(
+            # 缓冲快照/过滤与整段脱敏均为 CPU 密集操作（文本量最大约 1.9MB），
+            # 放入线程池执行，避免阻塞事件循环（预警推送与 WebSocket 心跳共用该循环）。
+            lines, truncated_by_size = await asyncio.to_thread(
+                get_runtime_log_collector().get_recent_lines,
                 requested,
                 keyword=RUNTIME_LOG_EXPORT_KEYWORD,
                 max_total_bytes=LOG_EXPORT_MAX_BYTES,
@@ -1077,7 +1080,9 @@ class PluginAdminCommandService(CommandTelemetryMixin):
                 )
                 return
 
-            export_text = self._build_log_export_text(lines, truncated_by_size)
+            export_text = await asyncio.to_thread(
+                self._build_log_export_text, lines, truncated_by_size
+            )
             payload = await get_paste_client().upload_text(export_text)
         except Exception as e:
             # 失败仅提示原因（用户确认不做聊天转发回退），细节留服务端日志。
