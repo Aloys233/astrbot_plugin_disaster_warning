@@ -28,7 +28,8 @@ from ....utils.version import get_astrbot_version
 _MAX_REPORT_CHARS = 20000
 _MAX_STACK_CHARS = 6000
 
-# 同一「模块 + 异常类型」的上传最小间隔（秒），防错误风暴刷爆 paste 服务。
+# 同一「模块 + 异常类型」两次**成功**上传的最小间隔（秒），防错误风暴刷爆 paste 服务；
+# 上传失败不进入冷却，下一条同类错误可立即重试（并发由 in-flight 去重兜底）。
 _ERROR_THROTTLE_SECONDS = 60
 
 # 节流记录表容量上限，超过时清理已过冷却期的旧键，防止长期运行无限增长。
@@ -49,7 +50,10 @@ class ErrorReportService:
         self._telemetry_enabled = telemetry_enabled
         self._plugin_version = plugin_version
         self._astrbot_version = astrbot_version
+        # 成功上传时间表（键 -> monotonic 时间戳）：冷却期仅从成功后起算。
         self._last_upload_times: dict[str, float] = {}
+        # 上传进行中的键集合：同键并发去重，避免同一错误点重复生成多份报告。
+        self._in_flight_keys: set[str] = set()
         self._closed = False
 
     @property
@@ -60,7 +64,12 @@ class ErrorReportService:
     async def report_error(
         self, exception: BaseException, module: str | None = None
     ) -> str | None:
-        """构建并上传错误报告，成功返回链接（并输出 info 日志），否则返回 None。"""
+        """构建并上传错误报告，成功返回链接（并输出 info 日志），否则返回 None。
+
+        重试策略：冷却时间戳**仅在成功生成链接后**记录——临时性上传失败不消耗
+        冷却窗口，下一条同类错误会立即重试；上传进行中（in-flight）的同类错误
+        直接跳过，保证同键同时最多一份在途上传，失败后也不会堆积并发重试。
+        """
         if not self.enabled or not self._should_report(exception):
             return None
 
@@ -69,27 +78,36 @@ class ErrorReportService:
         last = self._last_upload_times.get(throttle_key, 0.0)
         if now - last < _ERROR_THROTTLE_SECONDS:
             return None
-        self._last_upload_times[throttle_key] = now
+        if throttle_key in self._in_flight_keys:
+            # 同键上传进行中：跳过本次，不叠加并发上传。
+            return None
         self._trim_throttle_table(now)
+        self._in_flight_keys.add(throttle_key)
 
-        report_text = self._build_report(exception, module)
         try:
-            payload = await get_paste_client().upload_text(report_text)
-        except Exception as e:
-            # 上传失败仅留调试日志，不影响主流程。
-            logger.debug(f"[灾害预警] 错误报告上传失败（已忽略）: {e}")
-            return None
+            report_text = self._build_report(exception, module)
+            try:
+                payload = await get_paste_client().upload_text(report_text)
+            except Exception as e:
+                # 上传失败仅留调试日志，不影响主流程；
+                # 不记录冷却时间戳，下一条同类错误可立即重试。
+                logger.debug(f"[灾害预警] 错误报告上传失败（已忽略）: {e}")
+                return None
 
-        url = str(payload.get("url") or "")
-        if not url:
-            return None
-        expires_at = format_expires_at(payload.get("expires_at"))
-        logger.info(
-            f"[灾害预警] 已生成错误报告链接: {url}"
-            f"（模块: {module or 'unknown'}，异常: {type(exception).__name__}，"
-            f"过期: {expires_at}）"
-        )
-        return url
+            url = str(payload.get("url") or "")
+            if not url:
+                return None
+            expires_at = format_expires_at(payload.get("expires_at"))
+            logger.info(
+                f"[灾害预警] 已生成错误报告链接: {url}"
+                f"（模块: {module or 'unknown'}，异常: {type(exception).__name__}，"
+                f"过期: {expires_at}）"
+            )
+            # 成功才开始 60 秒冷却（从完成时刻起算）。
+            self._last_upload_times[throttle_key] = time.monotonic()
+            return url
+        finally:
+            self._in_flight_keys.discard(throttle_key)
 
     @staticmethod
     def _should_report(exception: BaseException) -> bool:
