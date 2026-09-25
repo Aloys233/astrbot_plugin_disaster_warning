@@ -52,6 +52,9 @@ class DisasterWarningPlugin(Star):
             # 插件一重载即打印组织 ASCII art 横幅（bold_cyan 配色，终端不支持颜色时回退纯文本）。
             print_banner()
 
+            # 最先挂载运行日志收集器，确保初始化阶段日志也可被 /灾害预警日志导出 读取。
+            self._lifecycle_service.install_runtime_log_collector()
+
             plugin_logger.set_config(self.config)
 
             # 初始化期先处理配置与管理员同步，再装配 disaster_service / telemetry / web_admin。
@@ -818,7 +821,7 @@ class DisasterWarningPlugin(Star):
 
     @filter.command("灾害预警日志导出", alias={"日志导出"})
     async def disaster_log_export(self, event: AstrMessageEvent, count: str = None):
-        """导出最近日志（脱敏）并上传生成链接"""
+        """导出最近运行日志（脱敏）并上传生成链接"""
         async for result in self._admin_command_service.handle_disaster_log_export(
             event, count_str=count
         ):

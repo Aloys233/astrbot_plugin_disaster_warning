@@ -24,15 +24,18 @@ from ...core.services.paste.paste_client import (
     get_paste_client,
 )
 from ...utils.log_sanitizer import sanitize_log_text
+from ...utils.runtime_log_collector import get_runtime_log_collector
 from ...utils.version import get_plugin_name, get_plugin_version
 from ..astrbot_restart import restart_astrbot_in_background
 from .forward_helper import build_forward_nodes, send_forward_blocks
 from .telemetry_mixin import CommandTelemetryMixin
 
-# 日志导出条数边界与字节预算（自建 paste 服务端限制 2MB，预留头部与余量）。
+# 日志导出行数边界与字节预算（自建 paste 服务端限制 2MB，预留头部与余量）。
 LOG_EXPORT_DEFAULT_COUNT = 500
 LOG_EXPORT_MAX_COUNT = 10000
 LOG_EXPORT_MAX_BYTES = 1_900_000
+# 运行日志导出的行过滤关键词：只导出本插件相关的运行日志行。
+RUNTIME_LOG_EXPORT_KEYWORD = "[灾害预警]"
 
 
 class PluginAdminCommandService(CommandTelemetryMixin):
@@ -1026,31 +1029,18 @@ class PluginAdminCommandService(CommandTelemetryMixin):
             yield event.plain_result(f"❌ 获取日志信息失败: {str(e)}")
 
     async def handle_disaster_log_export(self, event, count_str: str = None):
-        """处理 /灾害预警日志导出：读取最近日志条目，脱敏后上传生成链接。
+        """处理 /灾害预警日志导出：读取最近运行日志行，脱敏后上传生成链接。
 
-        导出结果仅以链接形式回复到原会话，不把日志内容发到聊天消息中；
-        上传失败仅提示原因，不做聊天转发回退。导出为管理员显式动作，
-        不随遥测开关联动。
+        运行日志来自进程内 RuntimeLogCollector 捕获的控制台日志
+        （仅 [灾害预警] 相关行），结果仅以链接形式回复到原会话，
+        不把日志内容发到聊天消息中；上传失败仅提示原因，不做聊天
+        转发回退。导出为管理员显式动作，不随遥测开关联动。
         """
         if not await self.plugin.is_plugin_admin(event):
             yield event.plain_result("🚫 权限不足：此命令仅限管理员使用。")
             return
 
-        if (
-            not self.plugin.disaster_service
-            or not self.plugin.disaster_service.message_logger
-        ):
-            yield event.plain_result("❌ 日志功能不可用")
-            return
-
-        message_logger = self.plugin.disaster_service.message_logger
-        if not message_logger.enabled:
-            yield event.plain_result(
-                "📋 原始消息日志功能未启用\n\n使用 /灾害预警日志开关 启用日志记录"
-            )
-            return
-
-        # 解析条数：默认 500，允许范围 1~10000，越界钳制并注明。
+        # 解析行数：默认 500，允许范围 1~10000，越界钳制并注明。
         requested = LOG_EXPORT_DEFAULT_COUNT
         clamped = False
         if count_str is not None and str(count_str).strip():
@@ -1058,7 +1048,7 @@ class PluginAdminCommandService(CommandTelemetryMixin):
                 requested = int(str(count_str).strip())
             except ValueError:
                 yield event.plain_result(
-                    "❌ 条数参数无效。\n\n"
+                    "❌ 行数参数无效。\n\n"
                     "📌 用法：/灾害预警日志导出 [数量]\n"
                     f"💡 数量范围 1~{LOG_EXPORT_MAX_COUNT}，"
                     f"默认 {LOG_EXPORT_DEFAULT_COUNT}"
@@ -1071,20 +1061,23 @@ class PluginAdminCommandService(CommandTelemetryMixin):
             requested = LOG_EXPORT_MAX_COUNT
             clamped = True
 
-        yield event.plain_result(f"📜 正在读取并上传最近 {requested} 条日志，请稍候…")
+        yield event.plain_result(
+            f"📜 正在读取并上传最近 {requested} 行运行日志，请稍候…"
+        )
 
         try:
-            tail = message_logger.read_recent_log_entries(
-                requested, max_total_bytes=LOG_EXPORT_MAX_BYTES
+            lines, truncated_by_size = get_runtime_log_collector().get_recent_lines(
+                requested,
+                keyword=RUNTIME_LOG_EXPORT_KEYWORD,
+                max_total_bytes=LOG_EXPORT_MAX_BYTES,
             )
-            if tail.returned <= 0:
+            if not lines:
                 yield event.plain_result(
-                    "📋 暂无日志记录\n\n"
-                    "当日志功能启用后，所有接收到的原始消息将被记录。"
+                    "📋 暂无运行日志记录\n\n运行日志自插件本次启动开始累积，稍后再试。"
                 )
                 return
 
-            export_text = self._build_log_export_text(tail)
+            export_text = self._build_log_export_text(lines, truncated_by_size)
             payload = await get_paste_client().upload_text(export_text)
         except Exception as e:
             # 失败仅提示原因（用户确认不做聊天转发回退），细节留服务端日志。
@@ -1102,42 +1095,43 @@ class PluginAdminCommandService(CommandTelemetryMixin):
                 "action": "log_export",
                 "success": True,
                 "requested": requested,
-                "exported": tail.returned,
-                "truncated_by_size": tail.truncated_by_size,
+                "exported": len(lines),
+                "truncated_by_size": truncated_by_size,
             },
         )
 
-        size_kb = tail.size_bytes / 1024
-        lines = [
-            "✅ 日志导出成功（内容已脱敏）",
-            f"📦 条目：{tail.returned} / 请求 {requested} 条（共 {size_kb:.1f} KB）",
+        size_kb = sum(len(line.encode("utf-8")) for line in lines) / 1024
+        lines_out = [
+            "✅ 运行日志导出成功（内容已脱敏）",
+            f"📦 行数：{len(lines)} / 请求 {requested} 行（共 {size_kb:.1f} KB）",
             f"🔗 链接：{payload.get('url', '')}",
         ]
         expires_at = format_expires_at(payload.get("expires_at"))
         if expires_at and expires_at != "未知":
-            lines.append(f"⏳ 过期时间：{expires_at}")
+            lines_out.append(f"⏳ 过期时间：{expires_at}")
         if clamped:
-            lines.append(f"ℹ️ 条数已钳制到允许范围 1~{LOG_EXPORT_MAX_COUNT}")
-        if tail.truncated_by_size:
-            lines.append("⚠️ 已达到导出大小上限，仅包含最新可容纳的日志条目")
-        elif tail.returned < requested:
-            lines.append(f"ℹ️ 当前日志共 {tail.returned} 条，不足请求的 {requested} 条")
-        yield event.plain_result("\n".join(lines))
+            lines_out.append(f"ℹ️ 行数已钳制到允许范围 1~{LOG_EXPORT_MAX_COUNT}")
+        if truncated_by_size:
+            lines_out.append("⚠️ 已达到导出大小上限，仅包含最新可容纳的日志行")
+        elif len(lines) < requested:
+            lines_out.append(f"ℹ️ 当前缓冲共 {len(lines)} 行，不足请求的 {requested} 行")
+        yield event.plain_result("\n".join(lines_out))
 
     @staticmethod
-    def _build_log_export_text(tail) -> str:
-        """把尾部条目结果拼装为导出文本，并对整段内容脱敏。"""
+    def _build_log_export_text(lines: list[str], truncated_by_size: bool) -> str:
+        """把运行日志行拼装为导出文本，并对整段内容脱敏。"""
         generated_at = (
             datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
         )
         header = (
-            "=== 灾害预警插件日志导出 ===\n"
+            "=== 灾害预警插件运行日志导出 ===\n"
             f"导出时间: {generated_at}\n"
             f"插件版本: {get_plugin_version()}\n"
-            f"条目数量: {tail.returned} 条（按时间升序）\n"
-            "说明: 以下为插件原始消息日志，已对凭据与本机路径脱敏。\n"
+            f"日志行数: {len(lines)} 行（按时间升序，仅含 [灾害预警] 相关日志）\n"
+            f"大小截断: {'是（已达导出上限）' if truncated_by_size else '否'}\n"
+            "说明: 以下为本进程自启动以来的插件运行日志，已对凭据与本机路径脱敏。\n"
         )
-        body = "\n".join(tail.entries)
+        body = "\n".join(lines)
         return sanitize_log_text(f"{header}\n{body}\n")
 
     async def handle_toggle_message_logging(self, event):

@@ -24,6 +24,10 @@ from ..core.services.telemetry.telemetry_service import TelemetryManager
 from ..core.services.telemetry.telemetry_utils import track_error_safely
 from ..utils.banner import print_stop_summary
 from ..utils.geolocation import close_geoip_session
+from ..utils.runtime_log_collector import (
+    install_runtime_log_collector,
+    uninstall_runtime_log_collector,
+)
 from ..utils.version import get_plugin_version
 
 
@@ -64,6 +68,13 @@ class PluginLifecycleService:
                 logger.info("[灾害预警] 配置已自动修正并保存")
         except Exception as e:
             logger.error(f"[灾害预警] 配置校验失败: {e}")
+
+    def install_runtime_log_collector(self) -> None:
+        """挂载运行日志内存收集器（幂等），供日志导出命令读取最近的运行日志行。
+
+        放在 initialize 最前面执行，确保初始化阶段的日志也被捕获。
+        """
+        install_runtime_log_collector()
 
     def setup_telemetry(self) -> None:
         """初始化并注入遥测上报管理器。"""
@@ -247,6 +258,9 @@ class PluginLifecycleService:
             print_stop_summary(self.plugin.disaster_service)
         except Exception as banner_err:
             logger.debug(f"[灾害预警] 停止汇总大屏打印失败（已忽略）: {banner_err}")
+
+        # 最后卸载运行日志收集器，避免停止阶段日志再写入已废弃的缓冲。
+        uninstall_runtime_log_collector()
 
     def handle_asyncio_exception(self, loop, context) -> None:
         """事件循环未处理异步异常拦截入口，判断来源若为本插件则执行遥测收集上报。"""
