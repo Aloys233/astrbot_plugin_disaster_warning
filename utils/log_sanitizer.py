@@ -25,9 +25,19 @@ _CREDENTIAL_FIELD_PATTERN = (
     r"login[-_]?key|fan[-_]?api[-_]?key)"
 )
 
-# URL query 中凭据参数：?token=xxx / &api-key=yyy → 值替换为 ***
+# URL 中凭据：
+# 1. userinfo 形态 scheme://user:pass@host 或 scheme://token@host → 整段替换为 ***@，
+#    覆盖 Basic Auth、带令牌用户名的数据库/服务地址等；
+# 2. query 参数形态 ?token=xxx / &api-key=yyy → 值替换为 ***。
+_URL_USERINFO_RE = re.compile(r"\b([\w+-]+://)[^\s/@]+@")
 _URL_CREDENTIAL_RE = re.compile(
     rf"(?i)([?&](?:{_CREDENTIAL_FIELD_PATTERN})=)[^&\s\"']+"
+)
+
+# Bearer/Basic 等鉴权方案后的令牌：Bearer <JWT>、Basic <base64> → 保留方案词，令牌 ***。
+# 阈值 6 个字符，避免把普通英文词当令牌；JWT（含 . 分隔的 base64url 段）可完整覆盖。
+_BEARER_TOKEN_RE = re.compile(
+    r"(?i)\b(bearer|basic|digest|token)\s+([A-Za-z0-9._~+/=-]{6,})"
 )
 
 # 带引号值的键值对（JSON/字典形态）：覆盖 "key": "value"、'key': 'value'、
@@ -35,6 +45,13 @@ _URL_CREDENTIAL_RE = re.compile(
 _CRED_QUOTED_VALUE_RE = re.compile(
     rf"""(?i)(?P<pre>["']?)(?P<name>{_CREDENTIAL_FIELD_PATTERN})(?P<post>["']?)"""
     rf"""(?P<sep>\s*[:=]\s*)(?P<q>["'])(?P<val>[^"'\n]*)(?P=q)"""
+)
+
+# 未加引号的冒号形态：api_key: xxx（可读日志常见写法，含全角冒号）。
+# 值若以鉴权方案词开头（Bearer *** 已由 _BEARER_TOKEN_RE 处理）则跳过，保留方案词。
+_CRED_COLON_VALUE_RE = re.compile(
+    rf"(?i)\b(?P<name>{_CREDENTIAL_FIELD_PATTERN})(?P<sep>\s*[:：]\s*)"
+    rf"(?P<val>(?!(?:bearer|basic|digest|token)\b)[^\s\"'&,，。；：）)】\]]+)"
 )
 
 # 裸键值对形态：key=value（值取到空白/引号/分隔符为止）。
@@ -81,13 +98,20 @@ def _mask_bare_value(match: re.Match) -> str:
 
 
 def sanitize_url_credentials(text: str) -> str:
-    """脱敏 URL query 中的凭据参数值（token/key/api_key 等）。"""
+    """脱敏 URL 中的凭据：userinfo（scheme://user:pass@host）与 query 参数值。"""
+    text = _URL_USERINFO_RE.sub(r"\1***@", text)
     return _URL_CREDENTIAL_RE.sub(r"\1***", text)
 
 
 def sanitize_credential_assignments(text: str) -> str:
-    """脱敏键值对形式的凭据字段值（JSON 双引号、单引号与裸 key=value）。"""
+    """脱敏键值对形式的凭据字段值。
+
+    覆盖：Bearer/Basic 等鉴权令牌（保留方案词）、JSON 双引号、单引号、
+    未加引号的 key: value（可读日志格式，含全角冒号）与裸 key=value。
+    """
+    text = _BEARER_TOKEN_RE.sub(r"\1 ***", text)
     text = _CRED_QUOTED_VALUE_RE.sub(_mask_quoted_value, text)
+    text = _CRED_COLON_VALUE_RE.sub(_mask_bare_value, text)
     return _CRED_BARE_VALUE_RE.sub(_mask_bare_value, text)
 
 
