@@ -37,14 +37,15 @@ DEFAULT_CAPTURE_LEVEL = logging.DEBUG
 
 
 def _is_user_explicit_debug() -> bool:
-    """动态检查用户是否在 AstrBot 侧显式配置了 DEBUG 级别（全局或针对本插件）。"""
+    """动态检查用户是否在 AstrBot 侧显式把「全局」日志级别配置为 DEBUG。
+
+    只认全局 ``log_level``，刻意不检查插件级 DEBUG 覆盖：本插件为了把 DEBUG 行
+    捕获进内存缓冲（供「日志导出 [debug]」使用），必须让插件专用 logger 长期保持
+    DEBUG —— 而这通常正是通过把该插件的日志级别设为 DEBUG 来实现的。若把该覆盖
+    也当作「用户想在看板/控制台看到 DEBUG」，静音逻辑就会被本插件自身的捕获需求
+    绕开，导致 Web 仪表盘依旧刷出本插件的调试日志。
+    """
     try:
-        from astrbot.core.log import LogManager
-
-        overrides = LogManager._load_plugin_level_overrides()
-        if overrides.get("astrbot_plugin_disaster_warning", "").upper() == "DEBUG":
-            return True
-
         from astrbot.core import astrbot_config
 
         if str(astrbot_config.get("log_level") or "").upper() == "DEBUG":
