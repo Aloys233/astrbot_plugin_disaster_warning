@@ -35,6 +35,27 @@ _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 DEFAULT_MAX_LINES = 20000
 DEFAULT_CAPTURE_LEVEL = logging.DEBUG
 
+# 本插件的 AstrBot 插件名与专用 logger 名（须与 AstrBot 命名约定保持一致）。
+_PLUGIN_NAME = "astrbot_plugin_disaster_warning"
+_PLUGIN_LOGGER_NAME = f"astrbot.plugin.{_PLUGIN_NAME}"
+
+
+def _ensure_plugin_debug_level() -> None:
+    """把本插件的 AstrBot 日志级别默认钉为 DEBUG（用户已显式设置过则尊重不改）。
+
+    捕获调试日志（供「日志导出 [debug]」）要求插件专用 logger 常驻 DEBUG，
+    但 ``install()`` 里的 ``setLevel(DEBUG)`` 会被 ``LogManager.get_plugin_logger()``
+    按全局级别重置；因此还需把 AstrBot 的插件级覆盖也置为 DEBUG 才能稳定保持。
+    仅在用户尚未设置过覆盖（返回 None）时写入，避免覆盖用户后来自选的级别。
+    """
+    try:
+        from astrbot.core.log import LogManager
+
+        if LogManager.get_plugin_log_level(_PLUGIN_NAME) is None:
+            LogManager.set_plugin_log_level(_PLUGIN_NAME, "DEBUG")
+    except Exception:
+        pass
+
 
 def _is_user_explicit_debug() -> bool:
     """动态检查用户是否在 AstrBot 侧显式把「全局」日志级别配置为 DEBUG。
@@ -205,11 +226,12 @@ class RuntimeLogCollector:
 
         # 确保插件专用记录器允许发射 DEBUG 日志（供内存收集，控制台与 Web 队列是否显示由动态过滤器联动）
         try:
-            logging.getLogger(
-                "astrbot.plugin.astrbot_plugin_disaster_warning"
-            ).setLevel(logging.DEBUG)
+            logging.getLogger(_PLUGIN_LOGGER_NAME).setLevel(logging.DEBUG)
         except Exception:
             pass
+
+        # 首次安装时把插件级日志级别默认设为 DEBUG，避免被 get_plugin_logger() 按全局级别重置
+        _ensure_plugin_debug_level()
 
         # 1. 尝试向 Loguru 注册 Sink（AstrBot 所有控制台日志的实际终点）
         try:
@@ -241,9 +263,7 @@ class RuntimeLogCollector:
         handler.setLevel(level)
         logging.getLogger().addHandler(handler)
         try:
-            logging.getLogger(
-                "astrbot.plugin.astrbot_plugin_disaster_warning"
-            ).addHandler(handler)
+            logging.getLogger(_PLUGIN_LOGGER_NAME).addHandler(handler)
         except Exception:
             pass
         self._handler = handler
@@ -252,9 +272,7 @@ class RuntimeLogCollector:
         """为 AstrBot 控制台 Sink 与 Web 仪表盘队列注入过滤屏障，静默本插件的 DEBUG 日志，避免控制台刷屏。"""
         # 1. 静默 AstrBot Web 仪表盘日志队列（LogQueueHandler）
         try:
-            plogger = logging.getLogger(
-                "astrbot.plugin.astrbot_plugin_disaster_warning"
-            )
+            plogger = logging.getLogger(_PLUGIN_LOGGER_NAME)
             for h in plogger.handlers:
                 # 凡是非 LoguruInterceptHandler 的处理器（如 LogQueueHandler），由 _MuteDebugFilter 动态过滤
                 if "Loguru" not in h.__class__.__name__:
@@ -330,9 +348,7 @@ class RuntimeLogCollector:
         """还原控制台 Sink 与 Web 仪表盘队列的原始过滤器（幂等）。"""
         # 1. 还原 Web 仪表盘队列
         try:
-            plogger = logging.getLogger(
-                "astrbot.plugin.astrbot_plugin_disaster_warning"
-            )
+            plogger = logging.getLogger(_PLUGIN_LOGGER_NAME)
             for h in plogger.handlers:
                 if "Loguru" not in h.__class__.__name__:
                     for f in list(h.filters):
@@ -375,9 +391,7 @@ class RuntimeLogCollector:
             except Exception:
                 pass
             try:
-                logging.getLogger(
-                    "astrbot.plugin.astrbot_plugin_disaster_warning"
-                ).removeHandler(self._handler)
+                logging.getLogger(_PLUGIN_LOGGER_NAME).removeHandler(self._handler)
             except Exception:
                 pass
             self._handler = None
