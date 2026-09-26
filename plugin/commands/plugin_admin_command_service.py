@@ -983,7 +983,11 @@ class PluginAdminCommandService(CommandTelemetryMixin):
             return
 
         try:
-            log_summary = self.plugin.disaster_service.message_logger.get_log_summary()
+            # build_summary 会同步读取全部日志文件（可达数百 MB），放入线程池执行，
+            # 避免阻塞事件循环。
+            log_summary = await asyncio.to_thread(
+                self.plugin.disaster_service.message_logger.get_log_summary
+            )
             if not log_summary["enabled"]:
                 yield event.plain_result(
                     "📋 原始消息日志功能未启用\n\n使用 /灾害预警日志开关 启用日志记录"
@@ -1028,9 +1032,16 @@ class PluginAdminCommandService(CommandTelemetryMixin):
             logger.error(f"[灾害预警] 获取日志信息失败: {e}")
             yield event.plain_result(f"❌ 获取日志信息失败: {str(e)}")
 
-    async def handle_disaster_log_export(self, event, count_str: str = None):
+    async def handle_disaster_log_export(
+        self,
+        event,
+        count_str: str = None,
+        arg2: str = None,
+        arg1: str = None,
+    ):
         """处理 /灾害预警日志导出：读取最近运行日志行，脱敏后上传生成链接。
 
+        支持可选 [debug] 参数导出 DEBUG 级别日志。
         运行日志来自进程内 RuntimeLogCollector 捕获的控制台日志
         （仅 [灾害预警] 相关行），结果仅以链接形式回复到原会话，
         不把日志内容发到聊天消息中；上传失败仅提示原因，不做聊天
@@ -1040,20 +1051,46 @@ class PluginAdminCommandService(CommandTelemetryMixin):
             yield event.plain_result("🚫 权限不足：此命令仅限管理员使用。")
             return
 
+        # 汇总传入的参数，支持如：
+        # /灾害预警日志导出
+        # /灾害预警日志导出 500
+        # /灾害预警日志导出 debug
+        # /灾害预警日志导出 500 debug
+        # /灾害预警日志导出 debug 500
+        tokens: list[str] = []
+        for val in (arg1, count_str, arg2):
+            if val is not None and str(val).strip():
+                tokens.extend(str(val).strip().split())
+
+        include_debug = False
+        requested_count_token: str | None = None
+
+        for token in tokens:
+            t_lower = token.lower()
+            if t_lower in ("debug", "-d", "--debug", "all"):
+                include_debug = True
+            elif requested_count_token is None:
+                requested_count_token = token
+            else:
+                # 出现多个非 debug 标识，保留第一个作为行数候选
+                pass
+
         # 解析行数：默认 500，允许范围 1~10000，越界钳制并注明。
         requested = LOG_EXPORT_DEFAULT_COUNT
         clamped = False
-        if count_str is not None and str(count_str).strip():
+        if requested_count_token is not None:
             try:
-                requested = int(str(count_str).strip())
+                requested = int(requested_count_token)
             except ValueError:
                 yield event.plain_result(
-                    "❌ 行数参数无效。\n\n"
-                    "📌 用法：/灾害预警日志导出 [数量]\n"
+                    "❌ 参数无效。\n\n"
+                    "📌 用法：/灾害预警日志导出 [数量] [debug]\n"
+                    "💡 例如：/灾害预警日志导出 500 debug（包含调试日志）\n"
                     f"💡 数量范围 1~{LOG_EXPORT_MAX_COUNT}，"
                     f"默认 {LOG_EXPORT_DEFAULT_COUNT}"
                 )
                 return
+
         if requested < 1:
             requested = 1
             clamped = True
@@ -1061,8 +1098,9 @@ class PluginAdminCommandService(CommandTelemetryMixin):
             requested = LOG_EXPORT_MAX_COUNT
             clamped = True
 
+        debug_tip = "（含 DEBUG）" if include_debug else ""
         yield event.plain_result(
-            f"📜 正在读取并上传最近 {requested} 行运行日志，请稍候…"
+            f"📜 正在读取并上传最近 {requested} 行运行日志{debug_tip}，请稍候…"
         )
 
         try:
@@ -1072,16 +1110,23 @@ class PluginAdminCommandService(CommandTelemetryMixin):
                 get_runtime_log_collector().get_recent_lines,
                 requested,
                 keyword=RUNTIME_LOG_EXPORT_KEYWORD,
+                include_debug=include_debug,
                 max_total_bytes=LOG_EXPORT_MAX_BYTES,
             )
             if not lines:
-                yield event.plain_result(
+                empty_tip = (
                     "📋 暂无运行日志记录\n\n运行日志自插件本次启动开始累积，稍后再试。"
                 )
+                if not include_debug:
+                    empty_tip += "\n💡 如需查看调试日志，可尝试添加 debug 参数：/灾害预警日志导出 debug"
+                yield event.plain_result(empty_tip)
                 return
 
             export_text = await asyncio.to_thread(
-                self._build_log_export_text, lines, truncated_by_size
+                self._build_log_export_text,
+                lines,
+                truncated_by_size,
+                include_debug,
             )
             payload = await get_paste_client().upload_text(export_text)
         except Exception as e:
@@ -1101,14 +1146,16 @@ class PluginAdminCommandService(CommandTelemetryMixin):
                 "success": True,
                 "requested": requested,
                 "exported": len(lines),
+                "include_debug": include_debug,
                 "truncated_by_size": truncated_by_size,
             },
         )
 
         size_kb = sum(len(line.encode("utf-8")) for line in lines) / 1024
+        level_desc = "含 DEBUG" if include_debug else "仅常规"
         lines_out = [
             "✅ 运行日志导出成功（内容已脱敏）",
-            f"📦 行数：{len(lines)} / 请求 {requested} 行（共 {size_kb:.1f} KB）",
+            f"📦 行数：{len(lines)} / 请求 {requested} 行（共 {size_kb:.1f} KB，{level_desc}）",
             f"🔗 链接：{payload.get('url', '')}",
         ]
         expires_at = format_expires_at(payload.get("expires_at"))
@@ -1123,15 +1170,21 @@ class PluginAdminCommandService(CommandTelemetryMixin):
         yield event.plain_result("\n".join(lines_out))
 
     @staticmethod
-    def _build_log_export_text(lines: list[str], truncated_by_size: bool) -> str:
+    def _build_log_export_text(
+        lines: list[str],
+        truncated_by_size: bool,
+        include_debug: bool = False,
+    ) -> str:
         """把运行日志行拼装为导出文本，并对整段内容脱敏。"""
         generated_at = (
             datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
         )
+        level_desc = "全部（包含 DEBUG）" if include_debug else "INFO 及以上（不含 DEBUG）"
         header = (
             "=== 灾害预警插件运行日志导出 ===\n"
             f"导出时间: {generated_at}\n"
             f"插件版本: {get_plugin_version()}\n"
+            f"日志级别: {level_desc}\n"
             f"日志行数: {len(lines)} 行（按时间升序，仅含 [灾害预警] 相关日志）\n"
             f"大小截断: {'是（已达导出上限）' if truncated_by_size else '否'}\n"
             "说明: 以下为本进程自启动以来的插件运行日志，已对凭据与本机路径脱敏。\n"
