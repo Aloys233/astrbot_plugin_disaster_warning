@@ -28,8 +28,10 @@ _CREDENTIAL_FIELD_PATTERN = (
 # URL 中凭据：
 # 1. userinfo 形态 scheme://user:pass@host 或 scheme://token@host → 整段替换为 ***@，
 #    覆盖 Basic Auth、带令牌用户名的数据库/服务地址等；
+#    userinfo 段限制在 authority 内：不跨越 / ? # 与空白，并以贪婪方式匹配到该段
+#    最后一个 @（未编码密码可能含 @），避免误伤 ?email=a@b.com 这类普通 URL。
 # 2. query 参数形态 ?token=xxx / &api-key=yyy → 值替换为 ***。
-_URL_USERINFO_RE = re.compile(r"\b([\w+-]+://)[^\s/@]+@")
+_URL_USERINFO_RE = re.compile(r"\b([\w+-]+://)[^\s/?#]+@")
 _URL_CREDENTIAL_RE = re.compile(
     rf"(?i)([?&](?:{_CREDENTIAL_FIELD_PATTERN})=)[^&\s\"']+"
 )

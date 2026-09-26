@@ -35,6 +35,14 @@ _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 DEFAULT_MAX_LINES = 20000
 DEFAULT_CAPTURE_LEVEL = logging.DEBUG
 
+# 单条记录字节上限。内存预算不能只按行数算：_format_loguru_record 会把整段异常堆栈
+# 拼进同一条记录，且插件 DEBUG 常驻捕获，原始 WebSocket 报文等可能让单条记录达数十 KB。
+# 写入缓冲前按此上限截断（截断处追加标记，便于导出时识别）。
+DEFAULT_MAX_RECORD_BYTES = 16 * 1024
+# 缓冲总字节上限。即使单条被截断，行数 × 单条上限仍可达数百 MB，故再设整体预算，
+# 超限时从最旧记录起逐出，保证常驻内存有确定上界（导出用的 max_total_bytes 不限制缓冲本身）。
+DEFAULT_MAX_TOTAL_BYTES = 8 * 1024 * 1024
+
 # 本插件的 AstrBot 插件名与专用 logger 名（须与 AstrBot 命名约定保持一致）。
 _PLUGIN_NAME = "astrbot_plugin_disaster_warning"
 _PLUGIN_LOGGER_NAME = f"astrbot.plugin.{_PLUGIN_NAME}"
@@ -93,9 +101,10 @@ class _MuteDebugFilter(logging.Filter):
 class _RingBufferHandler(logging.Handler):
     """把格式化后的日志行写入有界环形缓冲（用于无 Loguru 时的回退）。"""
 
-    def __init__(self, buffer: deque, formatter: logging.Formatter):
+    def __init__(self, collector: RuntimeLogCollector, formatter: logging.Formatter):
         super().__init__()
-        self._buffer = buffer
+        # 统一走收集器的 _append_line，复用单条截断与总字节预算逻辑。
+        self._collector = collector
         self.setFormatter(formatter)
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -105,7 +114,7 @@ class _RingBufferHandler(logging.Handler):
         except Exception:
             return
         if line:
-            self._buffer.append(line)
+            self._collector._append_line(line)
 
 
 class RuntimeLogCollector:
@@ -116,8 +125,21 @@ class RuntimeLogCollector:
         *,
         max_lines: int = DEFAULT_MAX_LINES,
         capture_all: bool = False,
+        max_record_bytes: int | None = DEFAULT_MAX_RECORD_BYTES,
+        max_total_bytes: int | None = DEFAULT_MAX_TOTAL_BYTES,
     ):
-        self._buffer: deque[str] = deque(maxlen=max(1, max_lines))
+        self._max_lines = max(1, max_lines)
+        # 不设 maxlen，改由 _append_line 同时按行数与总字节逐出，保证两个预算都能精确核算。
+        self._buffer: deque[str] = deque()
+        self._total_bytes = 0
+        self._max_record_bytes = (
+            None
+            if max_record_bytes is None or max_record_bytes <= 0
+            else max_record_bytes
+        )
+        self._max_total_bytes = (
+            None if max_total_bytes is None or max_total_bytes <= 0 else max_total_bytes
+        )
         self._lock = threading.Lock()
         self._handler: _RingBufferHandler | None = None
         self._loguru_sink_id: int | None = None
@@ -209,14 +231,42 @@ class RuntimeLogCollector:
         # 清洗可能存在的 ANSI 终端颜色转义字符（如彩色横幅），保证日志导出纯净易读
         return _ANSI_ESCAPE_RE.sub("", formatted)
 
+    def _append_line(self, line: str) -> None:
+        """截断单条记录后写入环形缓冲，并按行数与总字节预算逐出最旧记录。"""
+        line = self._truncate_record(line)
+        if not line:
+            return
+        line_bytes = len(line.encode("utf-8"))
+        with self._lock:
+            self._buffer.append(line)
+            self._total_bytes += line_bytes
+            # 行数预算
+            while len(self._buffer) > self._max_lines:
+                self._total_bytes -= len(self._buffer.popleft().encode("utf-8"))
+            # 总字节预算（至少保留 1 条，避免极度收紧时缓冲整段消失）
+            if self._max_total_bytes is not None:
+                while (
+                    self._total_bytes > self._max_total_bytes
+                    and len(self._buffer) > 1
+                ):
+                    self._total_bytes -= len(self._buffer.popleft().encode("utf-8"))
+
+    def _truncate_record(self, line: str) -> str:
+        """按单条字节预算截断记录，超出部分丢弃并追加截断标记。"""
+        if self._max_record_bytes is None:
+            return line
+        if len(line.encode("utf-8")) <= self._max_record_bytes:
+            return line
+        kept = self._cut_to_byte_budget(line, self._max_record_bytes)
+        return f"{kept}…[单条日志超限已截断]"
+
     def _handle_loguru_message(self, message: Any) -> None:
         """Loguru Sink 回调：把格式化后的日志行存入环形缓冲。"""
         try:
             line = self._format_loguru_record(message)
             if not line:
                 return
-            with self._lock:
-                self._buffer.append(line)
+            self._append_line(line)
         except Exception:
             return
 
@@ -258,7 +308,7 @@ class RuntimeLogCollector:
 
         # 2. 回退机制：若无 Loguru，挂载到标准库 Root Logger 及插件 Logger
         handler = _RingBufferHandler(
-            self._buffer, logging.Formatter(_LOG_FORMAT, datefmt=_DATE_FORMAT)
+            self, logging.Formatter(_LOG_FORMAT, datefmt=_DATE_FORMAT)
         )
         handler.setLevel(level)
         logging.getLogger().addHandler(handler)
@@ -398,6 +448,7 @@ class RuntimeLogCollector:
 
         with self._lock:
             self._buffer.clear()
+            self._total_bytes = 0
 
     def get_recent_lines(
         self,
@@ -509,6 +560,8 @@ def uninstall_runtime_log_collector() -> None:
 __all__ = [
     "DEFAULT_CAPTURE_LEVEL",
     "DEFAULT_MAX_LINES",
+    "DEFAULT_MAX_RECORD_BYTES",
+    "DEFAULT_MAX_TOTAL_BYTES",
     "RuntimeLogCollector",
     "get_runtime_log_collector",
     "install_runtime_log_collector",
