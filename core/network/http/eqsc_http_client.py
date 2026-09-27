@@ -235,7 +235,7 @@ class EqscHttpClient:
         params: dict[str, Any] | None = None,
         log_label: str,
         allow_retry_on_auth_error: bool = True,
-        failure_log_level: str = "warning",
+        info_status_codes: set[int] | None = None,
     ) -> tuple[int, Any, str]:
         """发送 EQSC GET 请求，返回 (status, json_or_none, raw_text)。
 
@@ -243,16 +243,15 @@ class EqscHttpClient:
         成功响应会同步写入原始消息日志。
 
         Args:
-            failure_log_level: 非 200/401/403 失败时的日志级别。
-                EQSC 对「不存在的台风编号」同样返回 HTTP 500，此类未命中属于
-                正常业务情况；调用方可传 info 降噪，避免误报为服务故障。
+            info_status_codes: 「已知未命中」状态码集合（默认空集）。命中集合内的
+                状态码降级为 INFO 日志，其余失败仍记 WARNING。
         """
         session = await self._ensure_session()
         current_token = access_token
         last_status = 0
         last_text = ""
-        # 失败日志级别：仅 info 降噪，其余（含非法值）一律回退 warning。
-        log_failure = logger.info if failure_log_level == "info" else logger.warning
+        # 仅显式声明的「未命中」状态码降级 INFO，其余（含非法值 / None）保持 WARNING。
+        quiet_status_codes = info_status_codes or set()
 
         for attempt in range(2):
             headers = {"Authorization": f"Bearer {current_token}"}
@@ -302,7 +301,12 @@ class EqscHttpClient:
                             continue
                     return response.status, None, last_text
 
-                log_failure(
+                failure_log = (
+                    logger.info
+                    if response.status in quiet_status_codes
+                    else logger.warning
+                )
+                failure_log(
                     f"[灾害预警] {log_label} 失败: HTTP {response.status}"
                     + (f"；响应: {last_text[:160]}" if last_text else "")
                 )

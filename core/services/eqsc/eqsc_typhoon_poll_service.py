@@ -534,7 +534,8 @@ class EqscTyphoonPollService:
             return []
 
         # 轮询侧强制绕过短缓存，确保按间隔拿到最新列表。
-        typhoon_list = await client.fetch_typhoon_list(use_cache=False)
+        # fetch_typhoon_list 现返回 (列表, 状态)，此处仅消费列表本身。
+        typhoon_list, _status = await client.fetch_typhoon_list(use_cache=False)
         if not isinstance(typhoon_list, list):
             self._consecutive_failures += 1
             self._notify_silence_fetch_completed(success=False)

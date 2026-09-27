@@ -29,7 +29,12 @@ from ...domain.typhoon import (
     constrain_wind_circle_by_fan_radius,
     to_eqsc_id,
 )
-from ...network.http.eqsc_typhoon_client import EqscTyphoonClient
+from ...network.http.eqsc_typhoon_client import (
+    LOOKUP_EMPTY,
+    LOOKUP_ERROR,
+    LOOKUP_HIT,
+    EqscTyphoonClient,
+)
 from .eqsc_channel_service import EqscChannelService
 
 
@@ -72,10 +77,6 @@ class TyphoonEnrichmentService:
         self._base_delay = 15  # 首次重试延迟（秒），后续按指数增长
         self._max_delay = 180  # 指数退避延迟上限（秒）
         self._max_total_wait = 300  # 后台重试总等待上限（秒）
-
-        # 最近一次 EQSC 查询结果：hit（命中）/ empty（未命中）/ error（异常）。
-        # 用于区分「编号不存在」与「服务故障」—— 后者才需要退避重试
-        self._last_lookup_result: str = "empty"
 
     @property
     def is_channel_enabled(self) -> bool:
@@ -279,44 +280,44 @@ class TyphoonEnrichmentService:
         name_en: str = "",
         *,
         use_cache: bool = True,
-    ) -> dict[str, Any] | None:
+    ) -> tuple[dict[str, Any] | None, str]:
         """尝试从 EQSC 获取台风数据（单次尝试，含 ID 查询 + 名称匹配兜底）。
 
         先统一获取一次 AccessToken，再复用到 ID 查询和名称兜底查询中，
         避免单次重试内重复鉴权导致日志刷两遍。
         缓存命中时 fetch 方法内部会跳过 token 使用，无需额外处理。
 
-        同时维护 self._last_lookup_result
 
         Args:
             use_cache: 查询指令应传 False，避免短缓存挡住最新编报。
+
+        Returns:
+            (台风数据, 状态) 二元组。
         """
-        # 默认按未命中处理，命中或异常时再改写
-        self._last_lookup_result = "empty"
+        # ID 查询是否已发生可恢复故障；一旦为 True 则不被列表未命中覆盖
+        id_lookup_failed = False
 
         # 统一获取一次 AccessToken，复用到后续所有查询
         access_token = await self._token_manager.get_access_token()
         if not access_token:
-            self._last_lookup_result = "error"
-            return None
+            return None, LOOKUP_ERROR
 
         # 优先按 ID 精确查询
         eqsc_id = to_eqsc_id(typhoon_id)
         if eqsc_id:
-            result = await self._typhoon_client.fetch_typhoon_by_id(
+            result, id_status = await self._typhoon_client.fetch_typhoon_by_id(
                 eqsc_id,
                 access_token=access_token,
                 use_cache=use_cache,
             )
             if result:
-                self._last_lookup_result = "hit"
-                return result
-            if self._typhoon_client.last_lookup_status == "error":
-                self._last_lookup_result = "error"
+                return result, LOOKUP_HIT
+            if id_status == LOOKUP_ERROR:
+                id_lookup_failed = True
 
         # ID 查询无结果，回退到无参查询 + 名称匹配
         if name or name_en:
-            typhoon_list = await self._typhoon_client.fetch_typhoon_list(
+            typhoon_list, list_status = await self._typhoon_client.fetch_typhoon_list(
                 access_token=access_token,
                 use_cache=use_cache,
             )
@@ -325,20 +326,17 @@ class TyphoonEnrichmentService:
                     typhoon_list, name_cn=name, name_en=name_en
                 )
                 if matched:
-                    self._last_lookup_result = "hit"
-                    return matched
-                # 列表接口正常返回却匹配不上：编号与名称均未命中，
-                # 属确定的「未命中」，直接回退，不再退避重试。
-                self._last_lookup_result = "empty"
-            elif self._typhoon_client.last_lookup_status == "error":
+                    return matched, LOOKUP_HIT
+                # 列表正常返回却匹配不上：仅当 ID 查询未发生故障时才判定未命中。
+                if not id_lookup_failed:
+                    return None, LOOKUP_EMPTY
+            elif list_status == LOOKUP_ERROR:
                 # 列表查询本身失败（网络 / 鉴权），保留可重试错误语义。
-                self._last_lookup_result = "error"
-            else:
-                # 列表接口正常返回空列表：通道可用但确无匹配数据，
-                # 判定为未命中，覆盖此前 ID 查询可能残留的 error 语义。
-                self._last_lookup_result = "empty"
+                return None, LOOKUP_ERROR
+            # 列表正常返回空列表：若 ID 查询已判定故障则保留故障继续重试，
+            # 否则视为通道可用但确无匹配数据（未命中）。
 
-        return None
+        return None, LOOKUP_ERROR if id_lookup_failed else LOOKUP_EMPTY
 
     async def enrich(self, envelope: EventEnvelope) -> EventEnvelope:
         """对台风事件进行 EQSC 富化（同步阻塞模式）。
@@ -379,7 +377,7 @@ class TyphoonEnrichmentService:
 
         # 首次同步尝试使用独立超时；后续仍按既有退避策略重试。
         try:
-            result = await asyncio.wait_for(
+            result, lookup_status = await asyncio.wait_for(
                 self._try_fetch_eqsc(typhoon_id, name, name_en),
                 timeout=float(self._initial_timeout),
             )
@@ -389,7 +387,7 @@ class TyphoonEnrichmentService:
                 return self._merge_eqsc_into_event(envelope, result)
             # 编号 / 名称均未命中（如 FAN 与 EQSC 编号体系不一致的无名低压）：
             # 属确定结果，直接回退 FAN 基础数据，避免数分钟的无效退避重试。
-            if self._last_lookup_result == "empty":
+            if lookup_status == LOOKUP_EMPTY:
                 self._channel_service.record_success()
                 logger.info(
                     f"[灾害预警] 台风 {typhoon_id} 在 EQSC 未命中（编号/名称均不匹配），"
@@ -423,7 +421,9 @@ class TyphoonEnrichmentService:
             total_wait += delay
 
             try:
-                result = await self._try_fetch_eqsc(typhoon_id, name, name_en)
+                result, lookup_status = await self._try_fetch_eqsc(
+                    typhoon_id, name, name_en
+                )
                 if result:
                     self._channel_service.record_success()
                     logger.info(
@@ -432,7 +432,10 @@ class TyphoonEnrichmentService:
                     return self._merge_eqsc_into_event(envelope, result)
                 # 重试期间若转为确定未命中（如列表接口已正常返回但编号/名称不匹配），
                 # 立即中止重试链，避免继续无意义退避。
-                if self._last_lookup_result == "empty":
+                if lookup_status == LOOKUP_EMPTY:
+                    # 通道正常工作、仅是未命中：清除既有失败计数，
+                    # 避免正常未命中累积导致熔断器提前开启。
+                    self._channel_service.record_success()
                     logger.info(
                         f"[灾害预警] 台风 {typhoon_id} 在 EQSC 未命中（编号/名称均不匹配），"
                         f"中止重试并使用 FAN Studio 基础数据"
@@ -476,7 +479,7 @@ class TyphoonEnrichmentService:
             return None
 
         try:
-            result = await self._try_fetch_eqsc(
+            result, _status = await self._try_fetch_eqsc(
                 str(typhoon_id or "").strip(),
                 str(name or "").strip(),
                 str(name_en or "").strip(),
@@ -521,7 +524,7 @@ class TyphoonEnrichmentService:
                 )
                 return []
 
-            typhoon_list = await self._typhoon_client.fetch_typhoon_list(
+            typhoon_list, _status = await self._typhoon_client.fetch_typhoon_list(
                 access_token=access_token,
                 use_cache=use_cache,
             )
