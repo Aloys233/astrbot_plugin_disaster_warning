@@ -125,12 +125,27 @@ class EqscTyphoonClient(EqscHttpClient):
 
             # 解析响应：{"typhoon": [{...}]}
             typhoon_list = data.get("typhoon", []) if isinstance(data, dict) else []
+            # 非列表视为无效响应（上游异常 / 结构变更），保留可重试语义，
+            # 避免把错误结构当作命中缓存后污染下游解析。
+            if not isinstance(typhoon_list, list):
+                logger.warning(
+                    f"[灾害预警] EQSC 台风 {typhoon_id} 响应格式异常："
+                    f"typhoon 字段非列表（{type(typhoon_list).__name__}）"
+                )
+                return None, LOOKUP_ERROR
             if not typhoon_list:
                 logger.debug(f"[灾害预警] EQSC 台风 {typhoon_id} 未找到匹配数据")
                 return None, LOOKUP_EMPTY
 
-            # 取第一个匹配的台风
-            typhoon_data = typhoon_list[0]
+            # 取第一个字典元素作为台风数据；列表元素类型不符同样按无效响应处理。
+            typhoon_data = next(
+                (item for item in typhoon_list if isinstance(item, dict)), None
+            )
+            if typhoon_data is None:
+                logger.warning(
+                    f"[灾害预警] EQSC 台风 {typhoon_id} 响应格式异常：未含有效台风对象"
+                )
+                return None, LOOKUP_ERROR
             # 写入缓存
             self._cache[typhoon_id] = (typhoon_data, time.time() + self._cache_ttl)
             return typhoon_data, LOOKUP_HIT
@@ -183,6 +198,14 @@ class EqscTyphoonClient(EqscHttpClient):
                 return [], LOOKUP_ERROR
 
             typhoon_list = data.get("typhoon", []) if isinstance(data, dict) else []
+            # 非列表视为无效响应：返回 error 语义而非把它当成空列表，
+            # 以免上层将服务异常误判为「未命中」而提前放弃重试。
+            if not isinstance(typhoon_list, list):
+                logger.warning(
+                    "[灾害预警] EQSC 台风列表响应格式异常：typhoon 字段非列表"
+                    f"（{type(typhoon_list).__name__}）"
+                )
+                return [], LOOKUP_ERROR
             # 写入缓存
             self._list_cache = (typhoon_list, time.time() + self._cache_ttl)
             # 接口调用成功：列表非空为 hit，空列表为 empty（通道正常但无数据）。
