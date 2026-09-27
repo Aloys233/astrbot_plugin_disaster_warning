@@ -46,8 +46,8 @@ def to_eqsc_id(typhoon_id: object) -> str:
       同样按年份后 2 位 + 编号末 2 位 -> 2627。
     - 其余长度或非正式编号体系退回末 4 位 / 原样返回。
 
-    仅对以标准年份前缀开头的纯数字编号启用重组，
-    其余输入行为保持不变，避免影响其它数据源的编号约定。
+    仅对以标准年份前缀开头的 6 位 / 8 位 纯数字编号启用重组，
+    其余长度与其它编号体系保持原「取末 4 位 / 原样」行为，避免改变既有编号约定下的查询目标。
     """
     text = _clean_id(typhoon_id)
     if not text:
@@ -56,7 +56,8 @@ def to_eqsc_id(typhoon_id: object) -> str:
         return text
     # 年份前缀恒为首 4 位，故年份后 2 位固定落在 text[2:4]，
     # 该写法对 6 位（202624）与 8 位（20260027）输入同时成立。
-    if len(text) >= 6 and _YEAR_PREFIX_RE.match(text):
+    # 长度精确限定为 6 / 8，避免把 7 位等非标准长度也纳入重组。
+    if len(text) in (6, 8) and _YEAR_PREFIX_RE.match(text):
         return f"{text[2:4]}{text[-2:]}"
     if len(text) >= 4:
         return text[-4:]
