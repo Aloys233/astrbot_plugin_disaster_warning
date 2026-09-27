@@ -102,9 +102,14 @@ jobs:
           fi
 
           # 防线一：业务脚本以经典 <script>（非 type="module"）加载，绝不能残留顶层 ESM import/export。
-          if grep -R -n -E '^[[:space:]]*(import|export)[[:space:]]' admin/js --include='*.js' >/dev/null; then
+          # 这里用「import|export 之后不接标识符字符、$ 或 (」来精确识别 ESM 关键字：
+          #   - 动态 import("x") 是经典脚本合法语法，故排除 '('；
+          #   - importx / exportFoo 等含关键字前缀的标识符不会被误伤；
+          #   - 末尾 $ 用行尾锚点判定裸 import/export。
+          ESM_STMT_RE='^[[:space:]]*(import|export)([^A-Za-z0-9_$(]|$)'
+          if grep -R -n -E "${ESM_STMT_RE}" admin/js --include='*.js' >/dev/null; then
             echo "::error::WebUI 编译产物残留顶层 ESM import/export，经典 <script> 会抛 SyntaxError 导致白屏"
-            grep -R -n -E '^[[:space:]]*(import|export)[[:space:]]' admin/js --include='*.js' | head -n 20
+            grep -R -n -E "${ESM_STMT_RE}" admin/js --include='*.js' | head -n 20
             exit 1
           fi
 
