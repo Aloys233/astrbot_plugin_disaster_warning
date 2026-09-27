@@ -49,6 +49,21 @@ class EqscTyphoonClient(EqscHttpClient):
         self._cache: dict[str, tuple[dict[str, Any], float]] = {}
         # 无参查询缓存（全部最新台风列表）
         self._list_cache: tuple[list[dict[str, Any]], float] | None = None
+        # 最近一次查询结果状态：hit（命中）/ empty（未命中）/ error（异常）。
+        # 供富化服务区分「编号不存在」与「服务故障」，未命中直接回退而非退避重试。
+        self._last_lookup_status: str = "empty"
+
+    @property
+    def last_lookup_status(self) -> str:
+        """最近一次台风查询结果状态：hit / empty / error。
+
+        - hit：成功拿到数据；
+        - empty：接口正常返回但未命中（编号不存在或名称不匹配）；
+        - error：网络 / 鉴权等可恢复异常。
+
+        富化服务据此区分未命中与故障，避免对不存在的编号反复退避重试。
+        """
+        return getattr(self, "_last_lookup_status", "empty")
 
     def clear_cache(self) -> None:
         """清除所有缓存。"""
@@ -76,15 +91,21 @@ class EqscTyphoonClient(EqscHttpClient):
         Returns:
             台风数据字典，或 None 表示查询失败/未找到。
         """
+        # 每次查询前重置状态，避免上一次结果污染本次判定
+        self._last_lookup_status = "empty"
+
         # 检查缓存
         if use_cache:
             cached = self._cache.get(typhoon_id)
             if cached and self._is_cache_valid(cached[1]):
+                self._last_lookup_status = "hit"
                 return cached[0]
 
         # 获取 AccessToken
         access_token = await self._resolve_access_token(access_token)
         if not access_token:
+            # 无可用令牌属通道级异常，标记为 error 交由上层走重试/熔断逻辑
+            self._last_lookup_status = "error"
             return None
 
         try:
@@ -94,8 +115,13 @@ class EqscTyphoonClient(EqscHttpClient):
                 access_token=access_token,
                 params={"id": typhoon_id},
                 log_label=f"EQSC 查询台风 {typhoon_id}",
+                # EQSC 用 HTTP 500 表示「编号不存在」，属正常未命中，
+                # 降级为 INFO 避免刷 WARN 噪音（其它 EQSC 接口行为不变）。
+                failure_log_level="info",
             )
             if status != 200 or not isinstance(data, dict):
+                # EQSC 对不存在的编号返回 500，此处保持 empty 语义（未命中），
+                # 由上层结合列表查询结果决定是否继续重试。
                 return None
 
             # 解析响应：{"typhoon": [{...}]}
@@ -108,9 +134,11 @@ class EqscTyphoonClient(EqscHttpClient):
             typhoon_data = typhoon_list[0]
             # 写入缓存
             self._cache[typhoon_id] = (typhoon_data, time.time() + self._cache_ttl)
+            self._last_lookup_status = "hit"
             return typhoon_data
 
         except Exception as e:
+            self._last_lookup_status = "error"
             logger.error(
                 f"[灾害预警] EQSC 查询台风 {typhoon_id} 异常: "
                 f"{type(e).__name__}: {str(e) or repr(e)}"
@@ -132,11 +160,14 @@ class EqscTyphoonClient(EqscHttpClient):
         """
         # 检查缓存
         if use_cache and self._list_cache and self._is_cache_valid(self._list_cache[1]):
+            # 列表接口成功返回（含空列表）均视为通道正常：empty 表示服务可用但未命中。
+            self._last_lookup_status = "hit" if self._list_cache[0] else "empty"
             return self._list_cache[0]
 
         # 获取 AccessToken
         access_token = await self._resolve_access_token(access_token)
         if not access_token:
+            self._last_lookup_status = "error"
             return []
 
         try:
@@ -147,14 +178,19 @@ class EqscTyphoonClient(EqscHttpClient):
                 log_label="EQSC 查询台风列表",
             )
             if status != 200 or not isinstance(data, dict):
+                # 列表接口异常：标记为 error，供上层区分网络故障与编号未命中。
+                self._last_lookup_status = "error"
                 return []
 
             typhoon_list = data.get("typhoon", []) if isinstance(data, dict) else []
             # 写入缓存
             self._list_cache = (typhoon_list, time.time() + self._cache_ttl)
+            # 接口调用成功：列表非空为 hit，空列表为 empty（通道正常但无数据）。
+            self._last_lookup_status = "hit" if typhoon_list else "empty"
             return typhoon_list
 
         except Exception as e:
+            self._last_lookup_status = "error"
             error_name = type(e).__name__
             # DNS 解析失败（getaddrinfo failed）等连接层错误对普通用户是黑话，
             # 先给出人性化提示，再附带原始技术细节便于排障。

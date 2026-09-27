@@ -235,16 +235,24 @@ class EqscHttpClient:
         params: dict[str, Any] | None = None,
         log_label: str,
         allow_retry_on_auth_error: bool = True,
+        failure_log_level: str = "warning",
     ) -> tuple[int, Any, str]:
         """发送 EQSC GET 请求，返回 (status, json_or_none, raw_text)。
 
         遇到 401/403 时会强制刷新 AccessToken 并重试一次。
         成功响应会同步写入原始消息日志。
+
+        Args:
+            failure_log_level: 非 200/401/403 失败时的日志级别。
+                EQSC 对「不存在的台风编号」同样返回 HTTP 500，此类未命中属于
+                正常业务情况；调用方可传 info 降噪，避免误报为服务故障。
         """
         session = await self._ensure_session()
         current_token = access_token
         last_status = 0
         last_text = ""
+        # 失败日志级别：仅 info 降噪，其余（含非法值）一律回退 warning。
+        log_failure = logger.info if failure_log_level == "info" else logger.warning
 
         for attempt in range(2):
             headers = {"Authorization": f"Bearer {current_token}"}
@@ -294,7 +302,7 @@ class EqscHttpClient:
                             continue
                     return response.status, None, last_text
 
-                logger.warning(
+                log_failure(
                     f"[灾害预警] {log_label} 失败: HTTP {response.status}"
                     + (f"；响应: {last_text[:160]}" if last_text else "")
                 )

@@ -73,6 +73,10 @@ class TyphoonEnrichmentService:
         self._max_delay = 180  # 指数退避延迟上限（秒）
         self._max_total_wait = 300  # 后台重试总等待上限（秒）
 
+        # 最近一次 EQSC 查询结果：hit（命中）/ empty（未命中）/ error（异常）。
+        # 用于区分「编号不存在」与「服务故障」—— 后者才需要退避重试
+        self._last_lookup_result: str = "empty"
+
     @property
     def is_channel_enabled(self) -> bool:
         """EQSC 通道是否可用（委托通道服务）。"""
@@ -282,12 +286,18 @@ class TyphoonEnrichmentService:
         避免单次重试内重复鉴权导致日志刷两遍。
         缓存命中时 fetch 方法内部会跳过 token 使用，无需额外处理。
 
+        同时维护 self._last_lookup_result
+
         Args:
             use_cache: 查询指令应传 False，避免短缓存挡住最新编报。
         """
+        # 默认按未命中处理，命中或异常时再改写
+        self._last_lookup_result = "empty"
+
         # 统一获取一次 AccessToken，复用到后续所有查询
         access_token = await self._token_manager.get_access_token()
         if not access_token:
+            self._last_lookup_result = "error"
             return None
 
         # 优先按 ID 精确查询
@@ -299,7 +309,10 @@ class TyphoonEnrichmentService:
                 use_cache=use_cache,
             )
             if result:
+                self._last_lookup_result = "hit"
                 return result
+            if self._typhoon_client.last_lookup_status == "error":
+                self._last_lookup_result = "error"
 
         # ID 查询无结果，回退到无参查询 + 名称匹配
         if name or name_en:
@@ -312,7 +325,18 @@ class TyphoonEnrichmentService:
                     typhoon_list, name_cn=name, name_en=name_en
                 )
                 if matched:
+                    self._last_lookup_result = "hit"
                     return matched
+                # 列表接口正常返回却匹配不上：编号与名称均未命中，
+                # 属确定的「未命中」，直接回退，不再退避重试。
+                self._last_lookup_result = "empty"
+            elif self._typhoon_client.last_lookup_status == "error":
+                # 列表查询本身失败（网络 / 鉴权），保留可重试错误语义。
+                self._last_lookup_result = "error"
+            else:
+                # 列表接口正常返回空列表：通道可用但确无匹配数据，
+                # 判定为未命中，覆盖此前 ID 查询可能残留的 error 语义。
+                self._last_lookup_result = "empty"
 
         return None
 
@@ -363,6 +387,15 @@ class TyphoonEnrichmentService:
                 self._channel_service.record_success()
                 logger.info(f"[灾害预警] 台风 {typhoon_id} EQSC 富化成功（首次查询）")
                 return self._merge_eqsc_into_event(envelope, result)
+            # 编号 / 名称均未命中（如 FAN 与 EQSC 编号体系不一致的无名低压）：
+            # 属确定结果，直接回退 FAN 基础数据，避免数分钟的无效退避重试。
+            if self._last_lookup_result == "empty":
+                self._channel_service.record_success()
+                logger.info(
+                    f"[灾害预警] 台风 {typhoon_id} 在 EQSC 未命中（编号/名称均不匹配），"
+                    f"直接使用 FAN Studio 基础数据"
+                )
+                return envelope
         except Exception as e:
             logger.debug(f"[灾害预警] 台风 {typhoon_id} EQSC 首次查询异常: {e}")
 
@@ -397,6 +430,14 @@ class TyphoonEnrichmentService:
                         f"[灾害预警] 台风 {typhoon_id} EQSC 富化成功（第 {attempt} 次重试）"
                     )
                     return self._merge_eqsc_into_event(envelope, result)
+                # 重试期间若转为确定未命中（如列表接口已正常返回但编号/名称不匹配），
+                # 立即中止重试链，避免继续无意义退避。
+                if self._last_lookup_result == "empty":
+                    logger.info(
+                        f"[灾害预警] 台风 {typhoon_id} 在 EQSC 未命中（编号/名称均不匹配），"
+                        f"中止重试并使用 FAN Studio 基础数据"
+                    )
+                    return envelope
             except Exception as e:
                 logger.debug(
                     f"[灾害预警] 台风 {typhoon_id} EQSC 第 {attempt} 次重试异常: {e}"
