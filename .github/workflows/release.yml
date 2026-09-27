@@ -101,6 +101,21 @@ jobs:
             exit 1
           fi
 
+          # 防线一：业务脚本以经典 <script>（非 type="module"）加载，绝不能残留顶层 ESM import/export。
+          if grep -R -n -E '^[[:space:]]*(import|export)[[:space:]]' admin/js --include='*.js' >/dev/null; then
+            echo "::error::WebUI 编译产物残留顶层 ESM import/export，经典 <script> 会抛 SyntaxError 导致白屏"
+            grep -R -n -E '^[[:space:]]*(import|export)[[:space:]]' admin/js --include='*.js' | head -n 20
+            exit 1
+          fi
+
+          # 防线二：显式拦截 react/jsx-runtime 与 react/jsx-dev-runtime 说明符，
+          # 它们是 @babel/preset-react automatic runtime 的产物特征，无法在经典 <script> 下运行。
+          if grep -R -n -E '"(react/jsx-runtime|react/jsx-dev-runtime)"' admin/js --include='*.js' >/dev/null; then
+            echo "::error::WebUI 编译产物引用了 react/jsx-runtime，说明使用了 automatic runtime，需改回 classic runtime"
+            grep -R -n -E '"(react/jsx-runtime|react/jsx-dev-runtime)"' admin/js --include='*.js' | head -n 20
+            exit 1
+          fi
+
           popd
 
           mkdir -p "${GITHUB_WORKSPACE}/dist"
