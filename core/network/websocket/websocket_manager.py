@@ -186,9 +186,11 @@ class WebSocketManager:
                 **preserved_info,
                 **(connection_info or {}),
             }
-            # 避免把旧会话的离线标记带进新连接元数据
-            merged_info.pop("offline_since", None)
-            merged_info.pop("short_retry_notified", None)
+            # 仅在“非重试”的首次建连时清除离线标记
+            # 正常断开后的标记清理由连接成功路径负责，此处无需重复。
+            if not is_retry:
+                merged_info.pop("offline_since", None)
+                merged_info.pop("short_retry_notified", None)
             self.connection_info[name] = {
                 "uri": uri,
                 "headers": headers,
