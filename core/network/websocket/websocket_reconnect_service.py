@@ -133,6 +133,10 @@ class WebSocketReconnectService:
         # 授权拒绝错误，或由业务层主动认定的不可瞬时重试的关闭帧
         if "401" in error_msg or "403" in error_msg:
             return True
+        # Jian Project 长期凭证失效（换票接口业务码 4201 / invalid_refresh_token）：
+        # 需人工重新申请登录密钥，短时 5 秒爆破重试无意义，直接进入兜底周期。
+        if "invalid_refresh_token" in error_msg or "4201" in error_msg:
+            return True
         if "协议错误关闭（不重连）" in error_msg:
             return True
         return False
