@@ -363,6 +363,11 @@ class PluginQueryCommandService(CommandTelemetryMixin):
         optional_c: str | None = None,
     ):
         """处理气象预警查询命令，支持指定地区、类型、级别与时间范围，全国模式下支持分批合并转发展示。"""
+        # 命令统一由插件处理，故显式阻止默认 LLM 回退。
+        try:
+            event.should_call_llm(True)
+        except Exception:
+            pass
 
         def _quoted_plain_result(text: str):
             return quoted_plain_result(self.plugin, event, text)
@@ -1351,7 +1356,9 @@ class PluginQueryCommandService(CommandTelemetryMixin):
             )
             return
 
-        raw_arg = (arg or "").strip()
+        # 框架对「默认值为 None」的参数会把纯数字入参自动转为 int
+        # 因此这里必须显式字符串化兜底，避免 str 与 int 混用导致 int.strip() 崩溃。
+        raw_arg = str(arg).strip() if arg is not None else ""
         debug_mode = None
         if raw_arg:
             key = raw_arg.lower()
