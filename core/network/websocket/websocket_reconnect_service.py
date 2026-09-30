@@ -135,7 +135,8 @@ class WebSocketReconnectService:
             return True
         # Jian Project 长期凭证失效（换票接口业务码 4201 / invalid_refresh_token）：
         # 需人工重新申请登录密钥，短时 5 秒爆破重试无意义，直接进入兜底周期。
-        if "invalid_refresh_token" in error_msg or "4201" in error_msg:
+        # 按换票错误的固定格式 "[4201]" 精确匹配。
+        if "invalid_refresh_token" in error_msg or "[4201]" in error_msg:
             return True
         if "协议错误关闭（不重连）" in error_msg:
             return True
