@@ -203,6 +203,11 @@ class DisasterWarningPlugin(Star):
     @filter.command("灾害预警")
     async def disaster_warning_help(self, event: AstrMessageEvent):
         """灾害预警插件帮助"""
+        # 显式阻止默认 LLM 回退，避免/灾害预警 等命令被 LLM 再次接管。
+        try:
+            event.should_call_llm(True)
+        except Exception:
+            pass
         header = (
             "🚨 灾害预警插件使用指南\n"
             "──────────────\n"
@@ -447,7 +452,7 @@ class DisasterWarningPlugin(Star):
             yield result
 
     @filter.command("snet", alias={"S-Net", "s-net", "Snet", "SNET"})
-    async def query_snet(self, event: AstrMessageEvent, arg: str = None):
+    async def query_snet(self, event: AstrMessageEvent, arg: str = ""):
         """查询 NIED S-Net 海底震度分布（可调试：random/7/6+/...）"""
         async for result in self._query_command_service.handle_query_snet(
             event,
