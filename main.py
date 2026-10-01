@@ -828,15 +828,10 @@ class DisasterWarningPlugin(Star):
             yield result
 
     @filter.command("灾害预警日志导出", alias={"日志导出"})
-    async def disaster_log_export(
-        self,
-        event: AstrMessageEvent,
-        arg1: str = None,
-        arg2: str = None,
-    ):
+    async def disaster_log_export(self, event: AstrMessageEvent, count: str = None):
         """导出最近运行日志（脱敏）并上传生成链接"""
         async for result in self._admin_command_service.handle_disaster_log_export(
-            event, arg1=arg1, arg2=arg2
+            event, count_str=count
         ):
             yield result
 

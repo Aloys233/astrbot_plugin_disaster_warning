@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 import re
-import sys
 import threading
 import traceback
 from collections import deque
@@ -31,71 +30,20 @@ _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _LOG_FORMAT = "%(asctime)s [%(levelname)s] [%(name)s] %(message)s"
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
-# 缓冲默认容量（行）与捕获级别（默认捕获 DEBUG 及以上，导出时按需过滤，控制台终端不受影响）。
+# 缓冲默认容量（行）与捕获级别（INFO 及以上，与控制台可见口径一致）。
 DEFAULT_MAX_LINES = 20000
-DEFAULT_CAPTURE_LEVEL = logging.DEBUG
+DEFAULT_CAPTURE_LEVEL = logging.INFO
 
 # 单条记录字节上限。内存预算不能只按行数算：_format_loguru_record 会把整段异常堆栈
-# 拼进同一条记录，且插件 DEBUG 常驻捕获，原始 WebSocket 报文等可能让单条记录达数十 KB。
+# 拼进同一条记录，原始 WebSocket 报文等可能让单条记录达数十 KB。
 # 写入缓冲前按此上限截断（截断处追加标记，便于导出时识别）。
 DEFAULT_MAX_RECORD_BYTES = 16 * 1024
 # 缓冲总字节上限。即使单条被截断，行数 × 单条上限仍可达数百 MB，故再设整体预算，
 # 超限时从最旧记录起逐出，保证常驻内存有确定上界（导出用的 max_total_bytes 不限制缓冲本身）。
 DEFAULT_MAX_TOTAL_BYTES = 8 * 1024 * 1024
 
-# 本插件的 AstrBot 插件名与专用 logger 名（须与 AstrBot 命名约定保持一致）。
-_PLUGIN_NAME = "astrbot_plugin_disaster_warning"
-_PLUGIN_LOGGER_NAME = f"astrbot.plugin.{_PLUGIN_NAME}"
-
-
-def _ensure_plugin_debug_level() -> None:
-    """把本插件的 AstrBot 日志级别默认钉为 DEBUG（用户已显式设置过则尊重不改）。
-
-    捕获调试日志（供「日志导出 [debug]」）要求插件专用 logger 常驻 DEBUG，
-    但 ``install()`` 里的 ``setLevel(DEBUG)`` 会被 ``LogManager.get_plugin_logger()``
-    按全局级别重置；因此还需把 AstrBot 的插件级覆盖也置为 DEBUG 才能稳定保持。
-    仅在用户尚未设置过覆盖（返回 None）时写入，避免覆盖用户后来自选的级别。
-    """
-    try:
-        from astrbot.core.log import LogManager
-
-        if LogManager.get_plugin_log_level(_PLUGIN_NAME) is None:
-            LogManager.set_plugin_log_level(_PLUGIN_NAME, "DEBUG")
-    except Exception:
-        pass
-
-
-def _is_user_explicit_debug() -> bool:
-    """动态检查用户是否在 AstrBot 侧显式把「全局」日志级别配置为 DEBUG。
-
-    只认全局 ``log_level``，刻意不检查插件级 DEBUG 覆盖：本插件为了把 DEBUG 行
-    捕获进内存缓冲（供「日志导出 [debug]」使用），必须让插件专用 logger 长期保持
-    DEBUG —— 而这通常正是通过把该插件的日志级别设为 DEBUG 来实现的。若把该覆盖
-    也当作「用户想在看板/控制台看到 DEBUG」，静音逻辑就会被本插件自身的捕获需求
-    绕开，导致 Web 仪表盘依旧刷出本插件的调试日志。
-    """
-    try:
-        from astrbot.core import astrbot_config
-
-        if str(astrbot_config.get("log_level") or "").upper() == "DEBUG":
-            return True
-    except Exception:
-        pass
-    return False
-
-
-class _MuteDebugFilter(logging.Filter):
-    """过滤 DEBUG 级别的 LogRecord，只允许 INFO 及以上通过（用于静默 Web 仪表盘队列）。
-
-    若用户在 AstrBot 侧显式开启了 DEBUG 级别，则自动放行，绝不阻碍用户配置。
-    """
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if record.levelno < logging.INFO:
-            if _is_user_explicit_debug():
-                return True
-            return False
-        return True
+# 本插件的 AstrBot 专用 logger 名（须与 AstrBot 命名约定保持一致）。
+_PLUGIN_LOGGER_NAME = "astrbot.plugin.astrbot_plugin_disaster_warning"
 
 
 class _RingBufferHandler(logging.Handler):
@@ -143,7 +91,6 @@ class RuntimeLogCollector:
         self._lock = threading.Lock()
         self._handler: _RingBufferHandler | None = None
         self._loguru_sink_id: int | None = None
-        self._patched_console_filters: dict[int, Any] = {}
         self._capture_all = capture_all
 
     @property
@@ -274,15 +221,6 @@ class RuntimeLogCollector:
         """挂载收集器（优先挂载到 Loguru，若不可用则回退到标准 logging，幂等）。"""
         self.uninstall()
 
-        # 确保插件专用记录器允许发射 DEBUG 日志（供内存收集，控制台与 Web 队列是否显示由动态过滤器联动）
-        try:
-            logging.getLogger(_PLUGIN_LOGGER_NAME).setLevel(logging.DEBUG)
-        except Exception:
-            pass
-
-        # 首次安装时把插件级日志级别默认设为 DEBUG，避免被 get_plugin_logger() 按全局级别重置
-        _ensure_plugin_debug_level()
-
         # 1. 尝试向 Loguru 注册 Sink（AstrBot 所有控制台日志的实际终点）
         try:
             from loguru import logger as loguru_logger
@@ -300,8 +238,6 @@ class RuntimeLogCollector:
                 level=level_name,
                 filter=self._filter_loguru_record,
             )
-            # 控制台静音：屏蔽本插件在控制台的 DEBUG 日志输出，只在内存中静默捕获
-            self._mute_console_debug()
             return
         except Exception:
             self._loguru_sink_id = None
@@ -318,114 +254,8 @@ class RuntimeLogCollector:
             pass
         self._handler = handler
 
-    def _mute_console_debug(self) -> None:
-        """为 AstrBot 控制台 Sink 与 Web 仪表盘队列注入过滤屏障，静默本插件的 DEBUG 日志，避免控制台刷屏。"""
-        # 1. 静默 AstrBot Web 仪表盘日志队列（LogQueueHandler）
-        try:
-            plogger = logging.getLogger(_PLUGIN_LOGGER_NAME)
-            for h in plogger.handlers:
-                # 凡是非 LoguruInterceptHandler 的处理器（如 LogQueueHandler），由 _MuteDebugFilter 动态过滤
-                if "Loguru" not in h.__class__.__name__:
-                    if not any(isinstance(f, _MuteDebugFilter) for f in h.filters):
-                        h.addFilter(_MuteDebugFilter())
-        except Exception:
-            pass
-
-        # 2. 静默 Loguru 终端控制台 Sink（sys.stdout / sys.stderr）
-        try:
-            from loguru import logger as loguru_logger
-
-            handlers = getattr(getattr(loguru_logger, "_core", None), "handlers", {})
-            if not isinstance(handlers, dict):
-                return
-
-            console_sink_ids: set[int] = set()
-            try:
-                from astrbot.core.log import LogManager
-
-                if LogManager._console_sink_id is not None:
-                    console_sink_ids.add(LogManager._console_sink_id)
-            except Exception:
-                pass
-
-            for handler_id, handler in handlers.items():
-                if handler_id == self._loguru_sink_id:
-                    continue  # 不 patch 内存收集器自身
-
-                sink_obj = getattr(handler, "_sink", None)
-                stream_obj = getattr(sink_obj, "_stream", None)
-                is_console = (
-                    handler_id in console_sink_ids
-                    or sink_obj in (sys.stdout, sys.stderr)
-                    or stream_obj in (sys.stdout, sys.stderr)
-                )
-                if not is_console:
-                    continue
-
-                if handler_id in self._patched_console_filters:
-                    continue  # 避免重复包装
-
-                orig_filter = getattr(handler, "_filter", None)
-                self._patched_console_filters[handler_id] = orig_filter
-
-                def make_silent_filter(raw_filter):
-                    def _silent_console_filter(record: dict[str, Any]) -> bool:
-                        if callable(raw_filter):
-                            try:
-                                if not raw_filter(record):
-                                    return False
-                            except Exception:
-                                return False
-                        # 拦截本插件的 DEBUG 级别日志（level.no < 20），若用户在 AstrBot 显式开启则放行
-                        extra = record.get("extra") or {}
-                        plugin_tag = str(extra.get("plugin_tag") or "")
-                        if "disaster_warning" in plugin_tag:
-                            level = record.get("level")
-                            level_no = getattr(level, "no", 20)
-                            if level_no < 20:
-                                if _is_user_explicit_debug():
-                                    return True
-                                return False
-                        return True
-
-                    return _silent_console_filter
-
-                handler._filter = make_silent_filter(orig_filter)
-        except Exception:
-            pass
-
-    def _unmute_console_debug(self) -> None:
-        """还原控制台 Sink 与 Web 仪表盘队列的原始过滤器（幂等）。"""
-        # 1. 还原 Web 仪表盘队列
-        try:
-            plogger = logging.getLogger(_PLUGIN_LOGGER_NAME)
-            for h in plogger.handlers:
-                if "Loguru" not in h.__class__.__name__:
-                    for f in list(h.filters):
-                        if isinstance(f, _MuteDebugFilter):
-                            h.removeFilter(f)
-        except Exception:
-            pass
-
-        # 2. 还原 Loguru 控制台 Sink
-        try:
-            from loguru import logger as loguru_logger
-
-            handlers = getattr(getattr(loguru_logger, "_core", None), "handlers", {})
-            if isinstance(handlers, dict):
-                for handler_id, orig_filter in list(
-                    self._patched_console_filters.items()
-                ):
-                    if handler_id in handlers:
-                        handlers[handler_id]._filter = orig_filter
-        except Exception:
-            pass
-        self._patched_console_filters.clear()
-
     def uninstall(self) -> None:
         """从日志系统移除并清空缓冲（幂等）。"""
-        self._unmute_console_debug()
-
         if self._loguru_sink_id is not None:
             try:
                 from loguru import logger as loguru_logger
@@ -455,7 +285,6 @@ class RuntimeLogCollector:
         count: int,
         *,
         keyword: str | None = None,
-        include_debug: bool = False,
         max_total_bytes: int | None = None,
     ) -> tuple[list[str], bool]:
         """读取最近的日志行（时间升序返回）。
@@ -464,7 +293,6 @@ class RuntimeLogCollector:
             count: 请求行数，从最新一行往回取。
             keyword: 可选行过滤关键词（如插件日志标记 [灾害预警]），
                 多行堆栈属于单条缓冲记录，会整块保留或整块丢弃。
-            include_debug: 是否包含 DEBUG 级别日志，默认为 False（仅返回 INFO 及以上）。
             max_total_bytes: 可选总字节预算，达到预算后不再纳入更旧行；
                 仅当首行就超预算时会就地截断该行，保证至少返回 1 行。
 
@@ -483,16 +311,6 @@ class RuntimeLogCollector:
                 if keyword in line
                 or "disaster_warning" in line
                 or "banner:" in line
-            ]
-
-        if not include_debug:
-            matched = [
-                line
-                for line in matched
-                if " [DBUG] " not in line
-                and " [DEBUG] " not in line
-                and not line.startswith("[DBUG] ")
-                and not line.startswith("[DEBUG] ")
             ]
 
         collected: list[str] = []  # 新行在前
