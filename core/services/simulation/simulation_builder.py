@@ -509,7 +509,12 @@ class SimulationBuilder:
             or "p2p" in step.source_id
         ):
             scale = _safe_int(params.get("scale"), None)
-            if scale is not None:
+            # cwa_jianproject 的 CwaEewJianProjectParser 不产出震度；schema 不暴露该字段，
+            # 但构建器不会按 schema 重新校验入参，故此处显式排除，避免 params 被注入后误写。
+            if (
+                scale is not None
+                and source_entry.source_id != "cwa_jianproject"
+            ):
                 if "p2p" in step.source_id:
                     # P2P 源使用业务档位值（10=震度1 … 70=震度7），需转换为规范震度。
                     # 对齐真实解析链路 ScaleConverter.convert_p2p_scale。
