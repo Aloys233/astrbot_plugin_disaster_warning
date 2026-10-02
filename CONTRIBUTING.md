@@ -132,6 +132,7 @@
 - @GLM 5.2
 - @DeepSeek V3.2
 - @DeepSeek V4 Flash 0731
+- @DeepSeek V4.1 Flash
 - @coderabbitai[bot]
 - @sourcery-ai[bot]
 - @qodo-free-for-open-source-projects[bot]
