@@ -686,10 +686,13 @@ def _build_earthquake_fields(source_id: str) -> list[dict[str, Any]]:
                 )
             )
         else:
-            # CWA 正式地震报告（FAN /cwa）为实测报告而非 EEW 预警，
-            # 标签区分"最大震度"，避免与"预估最大震度"误导混淆。
+            # 实测地震报告（presentation_type=earthquake_report，如 CWA 正式报告、
+            # JMA 地震情报）为测定结果而非 EEW 预警，标签用"最大震度"，
+            # 避免与 EEW 的"预估最大震度"误导混淆；EEW 预警仍为"预估最大震度"。
             scale_label = (
-                "最大震度" if source_id == "cwa_fanstudio_report" else "预估最大震度"
+                "最大震度"
+                if presentation_type == "earthquake_report"
+                else "预估最大震度"
             )
             # 默认震度取自官方文档示例数据（JMA EEW intensity=2 / JMA 情報 intensity=1）；
             # 未给出示例的源回退 4（震度4）。
