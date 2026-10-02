@@ -855,10 +855,6 @@ class UsgsPancakesParser(BaseParser):
             magnitude_type = str(msg_data.get("magnitudeType") or "").strip()
             url = str(msg_data.get("url") or "").strip()
 
-            # MMI 烈度（罗马数字 I–XII）转数值，供展示层按 mmi 制式呈现
-            intensity_raw = str(msg_data.get("intensity") or "").strip()
-            intensity = ScaleConverter.convert_roman_intensity(intensity_raw)
-
             # 地名中英翻译
             place_name = region_service.translate_place_name(
                 raw_place_name,
@@ -908,7 +904,6 @@ class UsgsPancakesParser(BaseParser):
                 place_name=place_name,
                 magnitude=magnitude,
                 depth=depth,
-                intensity=intensity,
                 metadata=dict(metadata),
             )
 
