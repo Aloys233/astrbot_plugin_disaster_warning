@@ -8,7 +8,11 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from ...sources.display_registry import CONNECTION_DISPLAY_NAMES, CONNECTION_GROUP_ALIAS
+from ...sources.display_registry import (
+    CONNECTION_DISPLAY_NAMES,
+    CONNECTION_GROUP_ALIAS,
+    LEGACY_CONNECTION_GROUP_KEYS,
+)
 from ...sources.source_catalog import SOURCE_CATALOG, get_legacy_group_names
 from ...sources.source_entry import SourceEntry
 from ..config.config_service import ConfigAccessor
@@ -106,11 +110,19 @@ class SourceRuntimeQueryService:
             entry.provider_family.value, entry.provider_family.value
         )
 
+    @staticmethod
+    def _canonical_group_key(group_key: str) -> str:
+        """把历史连接组 key 折叠为当前规范 key。"""
+        normalized = str(group_key or "").strip()
+        if not normalized:
+            return normalized
+        return LEGACY_CONNECTION_GROUP_KEYS.get(normalized, normalized)
+
     def get_expected_connection_groups(self) -> dict[str, str]:
         """获取理论上应存在的连接分组及其展示名称。"""
         groups: dict[str, str] = {}
         for entry in SOURCE_CATALOG.values():
-            group_key = self.get_connection_group_key(entry)
+            group_key = self._canonical_group_key(self.get_connection_group_key(entry))
             groups[group_key] = CONNECTION_DISPLAY_NAMES.get(group_key, group_key)
         return groups
 
@@ -118,7 +130,7 @@ class SourceRuntimeQueryService:
         """构建连接分组到数据源标识列表的映射。"""
         grouped: dict[str, list[str]] = defaultdict(list)
         for source_id, entry in SOURCE_CATALOG.items():
-            group_key = self.get_connection_group_key(entry)
+            group_key = self._canonical_group_key(self.get_connection_group_key(entry))
             grouped[group_key].append(source_id)
         return {key: sorted(value) for key, value in grouped.items()}
 
@@ -126,7 +138,7 @@ class SourceRuntimeQueryService:
         """构建连接分组下各数据源的启用状态。"""
         grouped: dict[str, dict[str, bool]] = defaultdict(dict)
         for source_id, entry in SOURCE_CATALOG.items():
-            group_key = self.get_connection_group_key(entry)
+            group_key = self._canonical_group_key(self.get_connection_group_key(entry))
             grouped[group_key][source_id] = self.is_source_enabled(source_id)
         return dict(grouped)
 
@@ -144,11 +156,17 @@ class SourceRuntimeQueryService:
         - total_connections 不在此计算，由 build_runtime_snapshot 按 expected_groups 统计
         """
         actual_connections = actual_connections or {}
-        active = sum(
-            1
-            for status in actual_connections.values()
-            if isinstance(status, dict) and bool(status.get("connected"))
-        )
+        # 按规范连接组 key 去重后统计
+        seen_groups: set[str] = set()
+        active = 0
+        for raw_name, status in actual_connections.items():
+            if not (isinstance(status, dict) and bool(status.get("connected"))):
+                continue
+            canonical = self._canonical_group_key(raw_name)
+            if canonical in seen_groups:
+                continue
+            seen_groups.add(canonical)
+            active += 1
 
         # 延迟导入，避免 query 层与 app 层形成硬循环依赖。
         from ...app.services.eqsc_channel_service import EqscChannelService
@@ -216,6 +234,22 @@ class SourceRuntimeQueryService:
         """
         actual_connections = actual_connections or {}
         latency_cache = latency_cache or {}
+        # 把连接表中的历史遗留键折叠为规范键
+        merged_actual: dict[str, dict[str, Any]] = {}
+        for raw_key, info in actual_connections.items():
+            canonical = self._canonical_group_key(raw_key)
+            existing = merged_actual.get(canonical)
+            if existing is None:
+                merged_actual[canonical] = info
+                continue
+            # 同键冲突时优先保留真实已连接者，避免旧占位记录覆盖新状态。
+            if (
+                isinstance(info, dict)
+                and info.get("connected")
+                and not (isinstance(existing, dict) and existing.get("connected"))
+            ):
+                merged_actual[canonical] = info
+        actual_connections = merged_actual
         expected_groups = self.get_expected_connection_groups()
         group_source_map = self.get_connection_group_source_map()
         group_status_map = self.build_connection_group_status()

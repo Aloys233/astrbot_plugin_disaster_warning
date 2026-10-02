@@ -581,7 +581,6 @@ class PluginAdminCommandService(CommandTelemetryMixin):
                     ("p2p_main", "P2P地震情報"),
                     ("wolfx_all", "Wolfx"),
                     ("pancakes_api", "PancakesAPI"),
-                    ("openquake_api", "PancakesAPI"),
                     ("jian_project_all", "Jian Project"),
                 ]
             )
@@ -592,7 +591,6 @@ class PluginAdminCommandService(CommandTelemetryMixin):
                     ("p2p_earthquake", "P2P地震情報"),
                     ("wolfx", "Wolfx"),
                     ("pancakes_api", "PancakesAPI"),
-                    ("openquake_api", "PancakesAPI"),
                     ("eqsc", "EQSC API"),
                     ("snet", "NIED S-Net"),
                 ]
@@ -640,15 +638,6 @@ class PluginAdminCommandService(CommandTelemetryMixin):
                     "china_cenc_earthquake": "中国地震台网地震测定",
                 },
                 "PancakesAPI": {
-                    "global_quake": "Global Quake",
-                    "japan_jma_eew": "日本气象厅: 紧急地震速报",
-                    "jma_pancakes": "日本气象厅: 紧急地震速报",
-                    "japan_jma_earthquake": "日本气象厅: 地震情报",
-                    "jma_eqlist_pancakes": "日本气象厅: 地震情报",
-                    "usgs_earthquake": "美国地质调查局 (USGS)",
-                    "usgs_pancakes": "美国地质调查局 (USGS)",
-                },
-                "OpenQuakeAPI": {
                     "global_quake": "Global Quake",
                     "japan_jma_eew": "日本气象厅: 紧急地震速报",
                     "jma_pancakes": "日本气象厅: 紧急地震速报",
@@ -810,7 +799,12 @@ class PluginAdminCommandService(CommandTelemetryMixin):
                     if gk:
                         group_enabled_map[gk] = bool(conn_info.get("enabled", False))
 
+            rendered_connection_names: set[str] = set()
             for conn_name, display_name in connection_label_map.items():
+                # 同一展示名最多渲染一行，避免历史别名残留造成重复条目。
+                if display_name in rendered_connection_names:
+                    continue
+                rendered_connection_names.add(display_name)
                 detail = conn_details.get(conn_name, {})
                 connected = bool(detail.get("connected", False))
                 is_enabled = group_enabled_map.get(conn_name, False)
