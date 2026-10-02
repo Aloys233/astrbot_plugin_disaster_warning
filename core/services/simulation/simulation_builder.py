@@ -895,17 +895,20 @@ class SimulationBuilder:
 
         # USGS 报告源：补详情 URL 与状态。
         # usgs_jianproject / usgs_pancakes 为 USGS 测定的 Jian Project / PancakesAPI 版本，
-        # 共用同一展示链路（usgs_report），故一并透传同名元数据。
+        # 共用同一展示链路（usgs_report），故透传各自真实解析器会产出的元数据。
         if source_entry.source_id in (
             "usgs_fanstudio",
             "usgs_jianproject",
             "usgs_pancakes",
         ):
-            url = str(params.get("url") or "").strip()
+            # url 仅对真实解析器会输出该字段的来源透传（FAN / Pancakes）；
+            # UsgsEarthquakeJianProjectParser 不读取/产出 url，透传会引入真实链路不可能出现的元数据。
+            if source_entry.source_id in ("usgs_fanstudio", "usgs_pancakes"):
+                url = str(params.get("url") or "").strip()
+                if url:
+                    extra["url"] = url
+                    extra["event_url"] = url
             status = str(params.get("status") or "").strip()
-            if url:
-                extra["url"] = url
-                extra["event_url"] = url
             if status:
                 extra["status"] = status
                 extra["info_type"] = status
@@ -923,11 +926,14 @@ class SimulationBuilder:
                 extra["info_type"] = info_type_name
             if name_by_info:
                 extra["name_by_info"] = name_by_info
-            # 最大烈度：Wolfx cenc_eqlist 文档含 intensity；展示链路统一消费
-            intensity = _safe_float(params.get("intensity"), None)
-            if intensity is not None:
-                extra["intensity"] = intensity
-                domain_event.intensity = intensity
+            # 最大烈度：仅对真实解析器会产出 intensity 的来源透传
+            # （Wolfx cenc_eqlist 含 intensity）；cenc_jianproject 不产出，透传会引入
+            # 真实链路不会出现的烈度。即便 params 被注入 intensity 也按来源忽略。
+            if source_entry.source_id in ("cenc_fanstudio", "cenc_wolfx"):
+                intensity = _safe_float(params.get("intensity"), None)
+                if intensity is not None:
+                    extra["intensity"] = intensity
+                    domain_event.intensity = intensity
 
         # CWA EEW 源：影响区域 locationDesc → impact_area（CwaEewPresenter 展示“影响区域”）。
         if source_entry.source_id in ("cwa_fanstudio", "cwa_wolfx"):

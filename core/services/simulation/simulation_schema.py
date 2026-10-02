@@ -1400,20 +1400,23 @@ def _build_earthquake_fields(source_id: str) -> list[dict[str, Any]]:
                 group="source",
             )
         )
-        # 最大烈度填写入口：Wolfx cenc_eqlist 文档含 intensity（最大烈度）；
-        # FAN /cenc 文档虽未直接给出，但展示链路统一支持，故一并暴露。
-        fields.append(
-            _num(
-                "intensity",
-                "最大烈度",
-                default=7.0,
-                min_value=0.0,
-                max_value=12.0,
-                step=0.1,
-                required=False,
-                group="source",
+        # 最大烈度填写入口：仅对真实解析器会产出 intensity 的来源暴露
+        # （Wolfx cenc_eqlist 文档含 intensity，FAN /cenc 展示链路统一支持）。
+        # cenc_jianproject 解析器不产出 intensity，若暴露会使其预览出现
+        # 真实该源事件不会展示的「最大烈度」行，故不暴露。
+        if source_id in ("cenc_fanstudio", "cenc_wolfx"):
+            fields.append(
+                _num(
+                    "intensity",
+                    "最大烈度",
+                    default=7.0,
+                    min_value=0.0,
+                    max_value=12.0,
+                    step=0.1,
+                    required=False,
+                    group="source",
+                )
             )
-        )
 
     # CWA 正式报告源：补报告图片与等震度图附件（源特有 → 右列）。
     if source_id == "cwa_fanstudio_report":
@@ -1638,26 +1641,26 @@ def _build_earthquake_fields(source_id: str) -> list[dict[str, Any]]:
     # USGS 报告源：补详情 URL 与状态（源特有 → 右列）。
     # 状态展示名与 CENC 测定统一为 [自动测定] / [正式测定]。
     # usgs_jianproject / usgs_pancakes 为 USGS 测定的 Jian Project / PancakesAPI 版本：
-    #   - usgs_jianproject 解析器读取 infoTypeName（无 url）
+    #   - usgs_jianproject 解析器只读取 infoTypeName
     #   - usgs_pancakes 解析器读取 url 与 magnitudeType
-    if source_id in ("usgs_fanstudio", "usgs_jianproject", "usgs_pancakes"):
-        # 官方文档 USGS 示例 infoTypeName=Automatic 且不含 url；Jian Project 版本据此设置默认值。
-        url_default = (
-            ""
-            if source_id == "usgs_jianproject"
-            else "https://earthquake.usgs.gov/earthquakes/eventpage/ci41026127"
-        )
-        status_default = "automatic" if source_id == "usgs_jianproject" else "reviewed"
+    #
+    # url 字段仅对真实解析器会输出该元数据的来源暴露：usgs_fanstudio / usgs_pancakes。
+    # UsgsEarthquakeJianProjectParser 不读取也不产出 URL，若对其暴露 url，
+    # 用户填写后模拟通知会带上真实 Jian Project 解析路径不可能产生的元数据，故不暴露。
+    if source_id in ("usgs_fanstudio", "usgs_pancakes"):
         fields.append(
             _text(
                 "url",
                 "详情 URL",
-                default=url_default,
+                default="https://earthquake.usgs.gov/earthquakes/eventpage/ci41026127",
                 required=False,
                 placeholder="如 https://earthquake.usgs.gov/earthquakes/eventpage/...",
                 group="source",
             )
         )
+    if source_id in ("usgs_fanstudio", "usgs_jianproject", "usgs_pancakes"):
+        # 官方文档 USGS 示例 infoTypeName=Automatic；Jian Project 版本据此设置默认值。
+        status_default = "automatic" if source_id == "usgs_jianproject" else "reviewed"
         fields.append(
             _select_field(
                 "status",
