@@ -972,12 +972,25 @@ class SimulationBuilder:
                     ]
 
         # JMA 地震情报源（PancakesAPI jma_eqlist）：补电文类型 / 标题 / 发布状态。
-        # info_type 与 is_cancel 已由上方 scale 分支统一透传，此处只处理 Pancakes 特有字段。
+        # 取消判定与 info_type 回退严格对齐 JmaEqlistPancakesParser：
+        #   - status == "取消" 或 infoType == "取消" 视为取消报（即使未勾选布尔开关）
+        #   - infoType 为空时回退到 telegram
         if source_entry.source_id == "jma_eqlist_pancakes":
             for key in ("telegram", "headline", "status"):
                 value = str(params.get(key) or "").strip()
                 if value:
                     extra[key] = value
+
+            info_type = str(params.get("info_type") or "").strip()
+            telegram = str(params.get("telegram") or "").strip()
+            effective_info_type = info_type or telegram
+            if effective_info_type:
+                extra["info_type"] = effective_info_type
+
+            status = str(params.get("status") or "").strip()
+            if status == "取消" or info_type == "取消":
+                extra["is_cancel"] = True
+                domain_event.metadata["is_cancel"] = True
 
         # CEA 地震预警源：补预估烈度 epiIntensity。
         if source_entry.source_id in ("cea_fanstudio", "cea_pr_fanstudio", "cea_wolfx"):
