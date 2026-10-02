@@ -180,6 +180,34 @@ class WebSocketManager:
             # 握手地址默认与上报地址一致；Jian Project 需要额外拼入短期访问令牌。
             connect_uri = uri
 
+            # 关键顺序：先落地本次建连的基础元数据并递增重试计数，再做鉴权换票。
+            preserved_info = self.connection_info.get(name, {})
+            merged_info = {
+                **preserved_info,
+                **(connection_info or {}),
+            }
+            # 仅在“非重试”的首次建连时清除离线标记
+            # 正常断开后的标记清理由连接成功路径负责，此处无需重复。
+            if not is_retry:
+                merged_info.pop("offline_since", None)
+                merged_info.pop("short_retry_notified", None)
+            self.connection_info[name] = {
+                "uri": uri,
+                "headers": headers,
+                "connection_type": "websocket",
+                "established_time": None,
+                "retry_count": 0,
+                **merged_info,
+            }
+
+            # 递增重试次数
+            if is_retry:
+                current_retry = self.connection_retry_counts.get(name, 0) + 1
+                self.connection_retry_counts[name] = current_retry
+            else:
+                logger.debug(f"[灾害预警] 正在连接 {name}")
+                self.connection_retry_counts[name] = 0
+
             # Jian Project：握手前使用登录密钥 (lk_...) 或长期 Token (rt_...) 换取短期 Access Token，
             # 令牌同时通过 ?key= 与 X-API-Key 头携带。
             if is_jian_project_connection(name):
@@ -217,39 +245,23 @@ class WebSocketManager:
                 if connection_info is not None:
                     connection_info["credential"] = configured_credential
                     connection_info["base_url"] = base_url
-
-            # 记录连接参数以便重连或状态上报
-            preserved_info = self.connection_info.get(name, {})
-            merged_info = {
-                **preserved_info,
-                **(connection_info or {}),
-            }
-            # 避免把旧会话的离线标记带进新连接元数据
-            merged_info.pop("offline_since", None)
-            merged_info.pop("short_retry_notified", None)
-            # Jian Project 的短期访问令牌每次建连都会重新换取并覆盖，
-            # 因此只随本次握手使用，不常驻 connection_info。
-            stored_headers = headers
-            if is_jian_project_connection(name) and isinstance(headers, dict):
+                # 短期访问令牌仅随本次握手使用，不常驻 connection_info：
+                # 回写最终 uri 与已剥离 X-API-Key 的存储头，避免令牌落盘/外泄。
                 stored_headers = {
-                    key: value for key, value in headers.items() if key != "X-API-Key"
+                    key: value
+                    for key, value in (headers or {}).items()
+                    if key != "X-API-Key"
                 }
-            self.connection_info[name] = {
-                "uri": uri,
-                "headers": stored_headers,
-                "connection_type": "websocket",
-                "established_time": None,
-                "retry_count": 0,
-                **merged_info,
-            }
-
-            # 递增重试次数
-            if is_retry:
-                current_retry = self.connection_retry_counts.get(name, 0) + 1
-                self.connection_retry_counts[name] = current_retry
-            else:
-                logger.debug(f"[灾害预警] 正在连接 {name}")
-                self.connection_retry_counts[name] = 0
+                info = self.connection_info.get(name, {})
+                info.update(
+                    {
+                        "uri": uri,
+                        "headers": stored_headers,
+                        "credential": configured_credential,
+                        "base_url": base_url,
+                    }
+                )
+                self.connection_info[name] = info
 
             # 统一配置建连的超时时间及负载限制
             conn_timeout = self.config.get("connection_timeout", 30)
