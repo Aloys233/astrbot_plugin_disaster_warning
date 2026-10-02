@@ -172,16 +172,12 @@ class PluginLifecycleService:
                 ):
                     # 浏览器资源通常最重，优先回收，避免宿主退出后仍残留外部进程。
                     try:
-                        await (
-                            self.plugin.disaster_service.message_manager.cleanup_browser()
-                        )
+                        await self.plugin.disaster_service.message_manager.cleanup_browser()
                     except Exception as be:
                         logger.debug(f"[灾害预警] 浏览器清理时出错（已忽略）: {be}")
                 try:
                     # 消息管理器内部的气象筛选器可能持有网络会话，需要显式关闭。
-                    await (
-                        self.plugin.disaster_service.message_manager.weather_filter.close()
-                    )
+                    await self.plugin.disaster_service.message_manager.weather_filter.close()
                 except Exception as wfe:
                     logger.debug(
                         f"[灾害预警] 气象过滤器 session 关闭时出错（已忽略）: {wfe}"
@@ -254,9 +250,7 @@ class PluginLifecycleService:
             try:
                 await close_geoip_session()
             except Exception as geoip_err:
-                logger.debug(
-                    f"[灾害预警] 关闭 GeoIP 会话时出错（已忽略）: {geoip_err}"
-                )
+                logger.debug(f"[灾害预警] 关闭 GeoIP 会话时出错（已忽略）: {geoip_err}")
 
             # 所有资源（含浏览器、后台延迟检测与 Web 管理端）均已完成回收后，
             # 才打印停止汇总大屏，确保面板上的回收状态与实际运行态一致。
@@ -265,9 +259,7 @@ class PluginLifecycleService:
             try:
                 print_stop_summary(self.plugin.disaster_service)
             except Exception as banner_err:
-                logger.debug(
-                    f"[灾害预警] 停止汇总大屏打印失败（已忽略）: {banner_err}"
-                )
+                logger.debug(f"[灾害预警] 停止汇总大屏打印失败（已忽略）: {banner_err}")
         finally:
             # 必须放在 finally：前面任一 await（如 stop_disaster_service / web_server.stop）
             # 抛异常时，此处仍会执行。否则旧 RuntimeLogCollector 注册的 Sink 及其 20000 行

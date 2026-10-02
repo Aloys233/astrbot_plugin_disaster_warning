@@ -20,9 +20,9 @@ from datetime import datetime, timezone
 
 from astrbot.api import logger
 
-from ..paste.paste_client import format_expires_at, get_paste_client
 from ....utils.log_sanitizer import sanitize_log_text
 from ....utils.version import get_astrbot_version
+from ..paste.paste_client import format_expires_at, get_paste_client
 
 # 错误报告整体字符上限与堆栈截断长度。
 _MAX_REPORT_CHARS = 20000

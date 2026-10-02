@@ -105,7 +105,11 @@ class RuntimeLogCollector:
         extra = record.get("extra") or {}
         plugin_tag = str(extra.get("plugin_tag") or "")
         src_file = str(extra.get("source_file") or "")
-        if "disaster_warning" in plugin_tag or "disaster_warning" in src_file or "banner" in src_file:
+        if (
+            "disaster_warning" in plugin_tag
+            or "disaster_warning" in src_file
+            or "banner" in src_file
+        ):
             return True
         msg = str(record.get("message") or "")
         if "[灾害预警]" in msg or "Disaster Warning" in msg or "灾害预警" in msg:
@@ -193,8 +197,7 @@ class RuntimeLogCollector:
             # 总字节预算（至少保留 1 条，避免极度收紧时缓冲整段消失）
             if self._max_total_bytes is not None:
                 while (
-                    self._total_bytes > self._max_total_bytes
-                    and len(self._buffer) > 1
+                    self._total_bytes > self._max_total_bytes and len(self._buffer) > 1
                 ):
                     self._total_bytes -= len(self._buffer.popleft().encode("utf-8"))
 
@@ -308,9 +311,7 @@ class RuntimeLogCollector:
             matched = [
                 line
                 for line in snapshot
-                if keyword in line
-                or "disaster_warning" in line
-                or "banner:" in line
+                if keyword in line or "disaster_warning" in line or "banner:" in line
             ]
 
         collected: list[str] = []  # 新行在前

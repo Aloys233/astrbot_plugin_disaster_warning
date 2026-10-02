@@ -151,8 +151,7 @@ class WebSocketReconnectService:
         # Jian Project 凭证失效，需人工重新申请，短时 5 秒爆破重试无意义，
         # 直接进入兜底周期，避免日志被每 5 秒一次的换票失败刷屏。
         if any(
-            marker in error_msg
-            for marker in self._PERMANENT_CREDENTIAL_ERROR_MARKERS
+            marker in error_msg for marker in self._PERMANENT_CREDENTIAL_ERROR_MARKERS
         ):
             return True
         if "协议错误关闭（不重连）" in error_msg:
